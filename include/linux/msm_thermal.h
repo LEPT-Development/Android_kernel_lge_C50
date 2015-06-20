@@ -53,6 +53,9 @@ struct msm_thermal_data {
 	int32_t vdd_mx_temp_degC;
 	int32_t vdd_mx_temp_hyst_degC;
 	int32_t therm_reset_temp_degC;
+#ifdef CONFIG_LGE_PM_THERMAL_LITTLE_FREQ
+	uint32_t little_freq_limit;
+#endif
 };
 
 #ifdef CONFIG_THERMAL_MONITOR

@@ -51,6 +51,9 @@
 
 #include <linux/firmware.h>
 
+#include <linux/syscalls.h>
+#include <linux/string.h>
+
 #if defined ( CONFIG_HAS_EARLYSUSPEND )
 #include <linux/earlysuspend.h>
 #elif defined (CONFIG_FB)
@@ -167,6 +170,24 @@ typedef enum
 
 } TouchState;
 
+#if defined(ENABLE_GHOST_DETECT_SOLUTION)
+enum{
+	EX_INIT,
+	EX_FIRST_INT,
+	EX_PREV_PRESS,
+	EX_CURR_PRESS,
+	EX_FIRST_GHOST_DETECT,
+	EX_SECOND_GHOST_DETECT,
+	EX_CURR_INT,
+	EX_PROFILE_MAX
+};
+enum{
+	REBASE_DONE,
+	REBASE_NEEDED,
+	REBASE_DOING
+};
+#endif
+
 typedef struct TouchModelConfigTag
 {
 	u32	button_support;
@@ -240,6 +261,9 @@ typedef enum
 #if defined(ENABLE_SWIPE_MODE)
 	DATA_SWIPE,
 #endif
+#if defined(ENABLE_REALTIME_LPWG_FAIL_REASON)
+	DATA_LPWG_FAIL,
+#endif
 } TouchDataType;
 
 typedef struct TouchFingerDataTag
@@ -292,6 +316,23 @@ typedef struct TouchReportDataTag
 	
 } TouchReportData;
 
+#if defined(ENABLE_NOISE_LOG)
+enum{
+	TS_NOISE_LOG_DISABLE = 0,
+	TS_NOISE_LOG_ENABLE,
+};
+
+enum{
+	MENU_OUT = 0,
+	MENU_ENTER,
+};
+
+typedef struct NoiseStateTag {
+	u8	noise_log_flag;
+	u8	check_noise_menu;
+} NoiseState;
+#endif
+
 typedef struct TouchDriverDataTag
 {
 	struct input_dev		*input_dev;
@@ -304,15 +345,21 @@ typedef struct TouchDriverDataTag
 	struct notifier_block	fb_notif;
 	#endif
 
-	struct delayed_work	work_upgrade;
+	#if defined(TOUCH_TYPE_INCELL)
+	struct notifier_block	lcd_notif;
+	#endif
+
+	struct delayed_work		work_upgrade;
 	struct delayed_work 	work_irq;
 	struct delayed_work 	work_init;
+	struct delayed_work		work_power_off_charging;
 	struct mutex			thread_lock;
 	struct wake_lock		lpwg_wake_lock;
 
 	int isSuspend;
 	int bootMode;
-	
+	int fpsChanged;
+
 	TouchState currState;
 	TouchState nextState;
 
@@ -327,6 +374,14 @@ typedef struct TouchDriverDataTag
 	char fw_image[MAX_FILENAME];
 
 	TouchReportData reportData;
+#if defined(ENABLE_GHOST_DETECT_SOLUTION)
+	TouchFingerData prevFingerData[MAX_FINGER+1];
+	atomic_t needToRebase;
+#endif
+
+#if defined(ENABLE_NOISE_LOG)
+	NoiseState noiseState;
+#endif
 
 } TouchDriverData;
 
@@ -345,6 +400,9 @@ typedef struct TouchDeviceSpecificFuncTag {
 	int (*DoSelfDiagnosis)(struct i2c_client *client, int* pRawStatus, int* pChannelStatus, char* pBuf, int bufSize, int* pDataLen);
 	int (*AccessRegister)(struct i2c_client *client, int cmd, int reg, int *pValue);
 	struct attribute **device_attribute_list;
+#if defined(ENABLE_GHOST_DETECT_SOLUTION)
+	int (*rebase_ic)(struct i2c_client *client, TouchReadData *pData, atomic_t *needToRebase);
+#endif
 
 } TouchDeviceSpecificFunction;
 

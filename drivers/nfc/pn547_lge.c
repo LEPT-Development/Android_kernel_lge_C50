@@ -421,7 +421,12 @@ static int pn547_probe(struct i2c_client *client,
         goto err_exit;
     }
 
-    pn547_parse_dt(&client->dev, pn547_dev);
+    ret = pn547_parse_dt(&client->dev, pn547_dev);
+    if (ret != 0) {
+        dev_err(&client->dev,"device tree set nfc is disabled\n");
+        ret = -ENOMEM;
+        goto err_int;
+    }
 
     pn547_dev->client   = client;
     dprintk(PN547_DRV_NAME ":IRQ : %d\nVEN : %d\nFIRM : %d\n",

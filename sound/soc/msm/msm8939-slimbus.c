@@ -205,21 +205,21 @@ static void *def_codec_mbhc_cal(void)
 	btn_high = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg,
 					       MBHC_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 180; // Hook
-	btn_low[1] = 181;
-	btn_high[1] = 182;
-	btn_low[2] = 183;
-	btn_high[2] = 300; //+
-	btn_low[3] = 301;
-	btn_high[3] = 340;
-	btn_low[4] = 341;
-	btn_high[4] = 350;
-	btn_low[5] = 351;
-	btn_high[5] = 370;
-	btn_low[6] = 371;
-	btn_high[6] = 380;
-	btn_low[7] = 381;
-	btn_high[7] = 660; //-
+	btn_high[0] = 110;
+	btn_low[1] = 111;
+	btn_high[1] = 190;
+	btn_low[2] = 191;
+	btn_high[2] = 359;
+	btn_low[3] = 360;
+	btn_high[3] = 750;
+	btn_low[4] = 751;
+	btn_high[4] = 752;
+	btn_low[5] = 753;
+	btn_high[5] = 754;
+	btn_low[6] = 755;
+	btn_high[6] = 756;
+	btn_low[7] = 757;
+	btn_high[7] = 758;
 	n_ready = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg, MBHC_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 12;
@@ -757,6 +757,54 @@ static int msm_slim_0_tx_ch_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+static int msm_btsco_rate_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s: msm_btsco_rate  = %d", __func__, msm_btsco_rate);
+#ifdef CONFIG_MACH_LGE
+	switch (msm_btsco_rate) {
+	case BTSCO_RATE_16KHZ:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+	case BTSCO_RATE_8KHZ:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+#else
+	ucontrol->value.integer.value[0] = msm_btsco_rate;
+#endif
+
+	return 0;
+}
+
+static int msm_btsco_rate_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	switch (ucontrol->value.integer.value[0]) {
+#ifdef CONFIG_MACH_LGE
+	case 0:
+		msm_btsco_rate = BTSCO_RATE_8KHZ;
+		break;
+	case 1:
+		msm_btsco_rate = BTSCO_RATE_16KHZ;
+		break;
+#else
+	case 8000:
+		msm_btsco_rate = SAMPLING_RATE_8KHZ;
+		break;
+	case 16000:
+		msm_btsco_rate = SAMPLING_RATE_16KHZ;
+		break;
+#endif
+	default:
+		msm_btsco_rate = SAMPLING_RATE_8KHZ;
+		break;
+	}
+	pr_debug("%s: msm_btsco_rate = %d\n", __func__, msm_btsco_rate);
+	return 0;
+}
+
 static const struct snd_soc_dapm_widget msm8x16_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY("MCLK",  SND_SOC_NOPM, 0, 0,
@@ -783,6 +831,11 @@ static const struct snd_soc_dapm_widget msm8x16_dapm_widgets[] = {
 #endif
 	SND_SOC_DAPM_SPK("Lineout_1 amp", msm8939_ext_spkramp_event),
 	SND_SOC_DAPM_SPK("Lineout_2 amp", msm8939_ext_spkramp_event),
+};
+
+static const char *const btsco_rate_text[] = {"8000", "16000"};
+static const struct soc_enum msm_btsco_enum[] = {
+	SOC_ENUM_SINGLE_EXT(2, btsco_rate_text),
 };
 
 static const char *const spk_function[] = {"Off", "On"};
@@ -813,6 +866,8 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			slim0_rx_bit_format_get, slim0_rx_bit_format_put),
 	SOC_ENUM_EXT("SLIM_0_RX SampleRate", msm_snd_enum[4],
 			slim0_rx_sample_rate_get, slim0_rx_sample_rate_put),
+	SOC_ENUM_EXT("Internal BTSCO SampleRate", msm_btsco_enum[0],
+			msm_btsco_rate_get, msm_btsco_rate_put),
 };
 
 static int msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,

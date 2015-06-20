@@ -876,6 +876,7 @@ static int diag_switch_logging(int requested_mode)
 	int success = -EINVAL;
 	int temp = 0, status = 0;
 	int new_mode = DIAG_USB_MODE; /* set the mode from diag_mux.h */
+	int old_logging_id;
 
 	switch (requested_mode) {
 	case USB_MODE:
@@ -914,6 +915,7 @@ static int diag_switch_logging(int requested_mode)
 	mutex_lock(&driver->diagchar_mutex);
 	temp = driver->logging_mode;
 	driver->logging_mode = requested_mode;
+	old_logging_id = driver->logging_process_id;
 
 	if (driver->logging_mode == MEMORY_DEVICE_MODE) {
 		driver->mask_check = 1;
@@ -949,8 +951,24 @@ static int diag_switch_logging(int requested_mode)
 	}
 
 	driver->logging_process_id = current->tgid;
-	mutex_unlock(&driver->diagchar_mutex);
 	status = diag_mux_switch_logging(new_mode);
+	if (status) {
+		if (requested_mode == MEMORY_DEVICE_MODE)
+			driver->mask_check = 0;
+		else if (requested_mode == SOCKET_MODE)
+			driver->socket_process = NULL;
+		else if (requested_mode == CALLBACK_MODE)
+			driver->callback_process = NULL;
+
+		driver->logging_process_id = old_logging_id;
+		driver->logging_mode = temp;
+		pr_err("diag: Error switching logging mode, current logging mode: %d\n",
+						driver->logging_mode);
+		mutex_unlock(&driver->diagchar_mutex);
+		success = status ? success : 1;
+		return success;
+	}
+	mutex_unlock(&driver->diagchar_mutex);
 	success = status ? success : 1;
 	return success;
 }
@@ -2292,7 +2310,7 @@ static ssize_t read_diag_enable(struct device *dev, struct device_attribute *att
 {
 	int ret;
 	ret = sprintf(buf, "%d", user_diag_enable);
-
+	pr_debug("%s: diag_enable=%d ret=%d\n", __func__, user_diag_enable,ret);
 	return ret;
 }
 
@@ -2300,26 +2318,8 @@ static ssize_t write_diag_enable(struct device *dev,
         struct device_attribute *attr,
         const char *buf, size_t size)
 {
-    unsigned char string[2];
-
-    sscanf(buf, "%s", string);
-
-    if (!strncmp(string, "0", 1))
-    {
-	    user_diag_enable = 0;
-    }
-    else
-    {
-	    user_diag_enable = 1;
-    }
-#if defined(CONFIG_LGE_DIAG_USB_ACCESS_LOCK)
-	if(lge_get_factory_boot()) {
-		printk("[FACTORY] force to diag enable, factory mode\n");
-		user_diag_enable = DIAG_ENABLE;
-	}
-#endif
-
-	printk("[%s] diag_enable: %d\n",__func__, user_diag_enable);
+    pr_debug("%s: diag_enable=%s size=%d\n", __func__, buf, (int)size);
+    sscanf(buf, "%d", &user_diag_enable);
 
     return size;
 }

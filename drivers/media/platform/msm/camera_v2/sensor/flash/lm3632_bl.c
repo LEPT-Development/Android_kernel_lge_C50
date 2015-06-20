@@ -454,6 +454,15 @@ void lm3632_backlight_on(int level)
 	}
 	mdelay(1);
 
+#if defined(CONFIG_LGE_TOUCH_CTRL_DSV)
+	{
+		hw_rev_type rev_type;
+		rev_type = lge_get_board_revno();
+		if(rev_type >= HW_REV_B)
+			lm3632_write_reg(main_lm3632_dev->client, 0x0C, 0x01);
+	}
+#endif
+
 	lm3632_set_main_current_level(main_lm3632_dev->client, level);
 	backlight_status |= BL_ON;
 
@@ -464,6 +473,14 @@ void lm3632_backlight_off(void)
 {
 	if (!(backlight_status & BL_ON))
 		return;
+#if defined(CONFIG_LGE_TOUCH_CTRL_DSV)
+	{
+		hw_rev_type rev_type;
+		rev_type = lge_get_board_revno();
+		if(rev_type >= HW_REV_B)
+			lm3632_write_reg(main_lm3632_dev->client, 0x0C, 0x19);
+	}
+#endif
 
 	saved_main_lcd_level = cur_main_lcd_level;
 	pr_err("%s\n", __func__);
@@ -863,10 +880,9 @@ static int lm3632_probe(struct i2c_client *i2c_dev,
 	}
 
 #ifdef CONFIG_LGE_LCD_OFF_DIMMING
-	if ((lge_get_bootreason() == 0x77665560) || (lge_get_bootreason() == 0x77665561)
-              || (lge_get_bootreason() == 0x77665562)) {
+	if ((lge_get_bootreason() == 0x77665560) || (lge_get_bootreason() == 0x77665561)) {
 		dev->bl_dev->props.brightness = 10;
-		pr_info("%s : LCD dimming reboot - backlight set 10\n", __func__);
+		pr_info("%s : fota reboot - backlight set 10\n", __func__);
 	}
 #endif
 	if (gpio_get_value(dev->bl_gpio))

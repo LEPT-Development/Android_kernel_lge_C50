@@ -293,10 +293,20 @@
 #define NOCHARGER_KNOCKON_WAKEUP	6
 
 #define PATCH_EVENT_PAIR_NUM 4
+#if 1 //For sensing test
+#define SELF_CAP_ON_NOISE_RECOVER      11
+#define SELF_CAP_OFF_NOISE_SUPPRESSION 12
 
+#define HIGH_TEMP_SET      		13
+#define HIGH_TEMP_UNSET 		14
+#if 1
+#define PATCH_EVENT_AAT      		15
+#define CHARGER_PLUGGED_AAT 		16
+#endif
+#else
 #define PATCH_EVENT_AAT	11
 #define CHARGER_PLUGGED_AAT			12
-
+#endif
 #else
 /* patch Event */
 #define CHARGER_PLUGGED             0
@@ -443,6 +453,12 @@ enum{
     LPWG_MULTI_TAP,
 };
 
+enum {
+	PM_RESUME = 0,
+	PM_SUSPEND,
+	PM_SUSPEND_IRQ,
+};
+
 typedef enum error_type {
     NO_ERROR = 0,
     ERROR,
@@ -496,6 +512,10 @@ struct mxt_platform_data {
 	u8 product[10];
 	unsigned int ref_reg_weight_val;
 	unsigned int butt_check_enable;
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_LPWG_DEBUG_REASON
+	int use_debug_reason;
+	int realtime_use_debug_reason;
+#endif
 };
 
 struct mxt_finger {
@@ -851,6 +871,7 @@ struct mxt_data {
 	//u8 is_lpwg_report_enable;
 	u8 mxt_multi_tap_enable;
 	u8 lpwg_mode;
+	u8 knock_on_mode;
 	/* ATMEL SELF REFERENCE CHECK FOR E8 */
 
 	u8 self_ref_chk[2];
@@ -877,10 +898,15 @@ struct mxt_data {
 	int screen;
 	int qcover;
 
-	int		stylus_in_a_row_cnt;        // Count of continuing stylus data
-	int		stylus_in_a_row_cnt_thr;    // if stylus_in_a_row_cnt_thr < sylus_in_a_row_cnt valut, notify on global valiant.
+	int stylus_in_a_row_cnt;        // Count of continuing stylus data
+	int	stylus_in_a_row_cnt_thr;    // if stylus_in_a_row_cnt_thr < sylus_in_a_row_cnt valut, notify on global valiant.
+	int x_zitter;
+	int y_zitter;
 
+	u8 pm_state;
 	u8 pen_support;
+
+	int self_cap;
 
 	struct pinctrl      *ts_pinctrl;
 	struct pinctrl_state    *ts_pinset_state_active;

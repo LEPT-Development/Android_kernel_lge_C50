@@ -88,20 +88,3 @@
 		asoc-codec-names = "msm-stub-codec.1", "tombak_codec";
 	};
 };
-
-&i2c_4 {
-	maxim_max14688@15 {
-		compatible = "maxim,max14688";
-		status = "disabled";
-		reg = <0x15>;
-		interrupt-parent = <&msm_gpio>;
-		interrupts = <110 0x3 114 0x3>;
-		max14688,gpio_detect = <&msm_gpio 110 0x00>; /* EAR_SENSE */
-		max14688,gpio_int = <&msm_gpio 114 0x00>; /* EAR_KEY - insertion/removal IRQ */
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&hs_max14688_det_active &hs_max14688_int_active>;
-		pinctrl-1 = <&hs_max14688_det_sleep &hs_max14688_int_sleep>;
-		qcom,switch-vadc = <&pm8916_vadc>;
-		qcom,vadc-channel = <0x10>; /* MPP 2 */
-	};
-};

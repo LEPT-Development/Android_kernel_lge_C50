@@ -786,8 +786,8 @@ static int get_tci_data(struct synaptics_ts_data *ts, int count)
 		ts->pw_data.data[i].y = TS_SNTS_GET_Y_POSITION(buffer[i][3],
 				buffer[i][2]);
 
-		if (ts->pdata->role->use_security_mode || ts->pdata->role->use_security_all) {
-			if (ts->lpwg_ctrl.password_enable) {
+		if (ts->pdata->role->use_security_mode) {
+			if (ts->lpwg_ctrl.password_enable || ts->pdata->role->use_security_all) {
 				TOUCH_INFO_MSG("LPWG data xxxx, xxxx\n");
 			} else {
 				TOUCH_INFO_MSG("LPWG data %d, %d\n",
@@ -1702,8 +1702,11 @@ static ssize_t show_firmware(struct i2c_client *client, char *buf)
 	int ret = 0;
 	int rc = 0;
 
+	mutex_lock(&ts->pdata->thread_lock);
 	read_page_description_table(ts->client);
 	rc = get_ic_info(ts);
+	mutex_unlock(&ts->pdata->thread_lock);
+
 	if (rc < 0) {
 		ret += snprintf(buf+ret,
 				PAGE_SIZE,
@@ -1821,8 +1824,11 @@ static ssize_t show_synaptics_fw_version(struct i2c_client *client, char *buf)
 	int ret = 0;
 	int rc = 0;
 
+	mutex_lock(&ts->pdata->thread_lock);
 	read_page_description_table(ts->client);
 	rc = get_ic_info(ts);
+	mutex_unlock(&ts->pdata->thread_lock);
+
 	if (rc < 0) {
 		ret += snprintf(buf+ret, PAGE_SIZE-ret, "-1\n");
 		ret += snprintf(buf+ret, PAGE_SIZE-ret, "Read Fail Touch IC Info.\n");
@@ -3200,7 +3206,7 @@ static int get_swipe_info(struct synaptics_ts_data *ts)
 		swp->support_swipe = SUPPORT_SWIPE;
 		swp->swipe_enable_mask = 0x01;
 		swp->swipe_gesture = 0x04;
-		swp->swipe_min_distance = 10;
+		swp->swipe_min_distance = 16;
 		swp->swipe_ratio_threshold = 200;
 		swp->swipe_ratio_check_period = 5;
 		swp->swipe_ratio_check_min_distance = 2;
@@ -3852,12 +3858,19 @@ static int get_swipe_data(struct i2c_client *client)
 	swipe_fail_reason = swipe_buf[8];
 	swipe_time = GET_U16_FROM_U8(swipe_buf[10], swipe_buf[9]);
 
-	TOUCH_DEBUG(DEBUG_BASE_INFO || DEBUG_LPWG, "LPWG Swipe Gesture: "
+	if (ts->lpwg_ctrl.password_enable || ts->pdata->role->use_security_all) {
+		TOUCH_DEBUG(DEBUG_BASE_INFO || DEBUG_LPWG, "LPWG Swipe Gesture: "
+			"start(xxxx,xxxx) end(xxxx,xxxx) "
+			"swipe_fail_reason(%d) swipe_time(%dms)\n",
+			swipe_fail_reason, swipe_time);
+	} else {
+		TOUCH_DEBUG(DEBUG_BASE_INFO || DEBUG_LPWG, "LPWG Swipe Gesture: "
 			"start(%4d,%4d) end(%4d,%4d) "
 			"swipe_fail_reason(%d) swipe_time(%dms)\n",
 			swipe_start_x, swipe_start_y,
 			swipe_end_x, swipe_end_y,
 			swipe_fail_reason, swipe_time);
+	}
 
 	if (swipe_fail_reason == 0) {
 		ts->pw_data.data_num = 1;

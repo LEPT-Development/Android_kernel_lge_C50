@@ -55,7 +55,7 @@
 #define PS_THRESHOLD_MIN (0)
 #define ALS_THRESHOLD_MAX (65535)
 #define ALS_THRESHOLD_MIN (0)
-#define DEFAULT_CROSS_TALK (50)
+#define DEFAULT_CROSS_TALK (9)
 #define ALSCALC_OFFSET (1000)
 #define ALS_MAX_VALUE (43000)
 #define ALSCALC_GAIN_MASK (0xF << 2)
@@ -439,7 +439,7 @@ static ssize_t rpr0521_store_enable(struct device *dev, struct device_attribute 
 		}
 		else if(is_light){
 			/* start timer of 1 second */
-			result = hrtimer_start(&ps_als_ginfo->timer, ktime_set(1, 0), HRTIMER_MODE_REL);
+			result = hrtimer_start(&ps_als_ginfo->timer, ktime_set(0, 125000000), HRTIMER_MODE_REL);
 			if (result != 0) {
 				PINFO("can't start timer\n");
 				goto unlock;
@@ -528,6 +528,7 @@ static ssize_t rpr0521_store_near_offset(struct device *dev, struct device_attri
 {
 	unsigned long val = simple_strtoul(buf, NULL, 10);
 	ps_als_ginfo->config.near_offset = val;
+	make_init_data(ps_als_ginfo);
 	return count;
 }
 
@@ -540,6 +541,7 @@ static ssize_t rpr0521_store_far_offset(struct device *dev, struct device_attrib
 {
 	unsigned long val = simple_strtoul(buf, NULL, 10);
 	ps_als_ginfo->config.far_offset= val;
+	make_init_data(ps_als_ginfo);
 	return count;
 }
 
@@ -552,6 +554,7 @@ static ssize_t rpr0521_store_ps_gain(struct device *dev, struct device_attribute
 {
 	unsigned long val = simple_strtoul(buf, NULL, 10);
 	ps_als_ginfo->config.ps_gain = val;
+	make_init_data(ps_als_ginfo);
 	return count;
 }
 
@@ -564,6 +567,7 @@ static ssize_t rpr0521_store_led_current(struct device *dev, struct device_attri
 {
 	unsigned long val = simple_strtoul(buf, NULL, 10);
 	ps_als_ginfo->config.led_current = val;
+	make_init_data(ps_als_ginfo);
 	return count;
 }
 
@@ -576,6 +580,7 @@ static ssize_t rpr0521_store_infrared_level(struct device *dev, struct device_at
 {
 	unsigned long val = simple_strtoul(buf, NULL, 10);
 	ps_als_ginfo->config.infrared_level = val;
+	make_init_data(ps_als_ginfo);
 	return count;
 }
 

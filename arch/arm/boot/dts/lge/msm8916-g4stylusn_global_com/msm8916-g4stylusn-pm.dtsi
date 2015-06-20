@@ -215,6 +215,7 @@ qcom,pm8916@0 {
 		ti,ext-chg-disen-gpio = <&msm_gpio 17 0>;
 		ti,term-current-ma = <150>;
 		ti,vbat-max-mv = <4400>;		/* Step unit 20 mV, battery available voltage(x = 4.375) : x-0.025 ~ x ~ x+0.025 */
+		ti,safety-time = <480>;
 		ti,vin-limit-mv = <4540>;
 		/* Pins config setting */
 		pinctrl-names = "default", "sleep";

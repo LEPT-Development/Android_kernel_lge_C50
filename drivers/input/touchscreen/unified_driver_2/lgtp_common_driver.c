@@ -58,6 +58,7 @@ enum
 };
 
 int lockscreen_stat = 0;
+int debug_abs = 0;
 #if defined ( TOUCH_PLATFORM_QCT ) && !defined ( TOUCH_DEVICE_LU202X )
 atomic_t pm_state;
 #endif
@@ -175,6 +176,12 @@ static void report_finger(TouchDriverData *pDriverData, TouchReadData *pReadData
 		input_report_abs(pDriverData->input_dev, ABS_MT_WIDTH_MAJOR, pReadData->fingerData[i].width_major);
 		input_report_abs(pDriverData->input_dev, ABS_MT_WIDTH_MINOR, pReadData->fingerData[i].width_minor);
 		input_report_abs(pDriverData->input_dev, ABS_MT_ORIENTATION, pReadData->fingerData[i].orientation);
+		if(debug_abs){
+			TOUCH_DBG("<%d> pos[%4d,%4d] w_m[%2d] w_n[%2d] o[%2d] p[%3d]\n",
+				pReadData->fingerData[i].id, pReadData->fingerData[i].x, pReadData->fingerData[i].y,
+				pReadData->fingerData[i].width_major, pReadData->fingerData[i].width_minor,
+				pReadData->fingerData[i].orientation, pReadData->fingerData[i].pressure);
+		}
 	}
 
 	for(i=0 ; i < pReadData->count ; i++) {
@@ -1152,6 +1159,24 @@ static ssize_t store_upgrade(struct i2c_client *client, const char *buf, size_t 
 //==========================================================
 // Developer will use it to upgrade firmware with default firmware
 //==========================================================
+static ssize_t show_upgrade(struct i2c_client *client, char *buf)
+{
+	int ret = 0;
+	TouchDriverData *pDriverData = i2c_get_clientdata(client);
+
+	mutex_lock(pMutexTouch);
+
+	pDriverData->useDefaultFirmware = TOUCH_TRUE;
+
+	ret = sprintf(buf, "default firmware upgrade\n");
+
+	queue_delayed_work(touch_wq, &pDriverData->work_upgrade, 0);
+
+	mutex_unlock(pMutexTouch);
+
+	return ret;
+}
+
 static ssize_t store_rewrite_bin_fw(struct i2c_client *client, const char *buf, size_t count)
 {
 	TouchDriverData *pDriverData = i2c_get_clientdata(client);
@@ -1269,6 +1294,33 @@ static ssize_t store_keyguard_info(struct i2c_client *client,
 	return count;
 }
 
+//==========================================================
+// Developer will use it to debug touch coordinates in real time
+// debug_abs 1: on , 0: off
+//==========================================================
+static ssize_t store_debug_abs(struct i2c_client *client,
+		const char *buf, size_t count)
+{
+	int value;
+
+	sscanf(buf, "%d", &value);
+	switch (value) {
+	case 0:
+		debug_abs = 0;
+		TOUCH_DBG("debug_abs = %d\n", debug_abs);
+		break;
+	case 1:
+		debug_abs = 1;
+		TOUCH_DBG("debug_abs = %d\n", debug_abs);
+		break;
+    default:
+		    break;
+	}
+
+	return count;
+}
+
+
 static LGE_TOUCH_ATTR(keyguard, S_IRUGO | S_IWUSR, NULL, store_keyguard_info);
 static LGE_TOUCH_ATTR(knock_on_type, S_IRUGO | S_IWUSR, show_knock_on_type, NULL);
 static LGE_TOUCH_ATTR(lpwg_notify, S_IRUGO | S_IWUSR, NULL, store_lpwg_notify);
@@ -1278,9 +1330,11 @@ static LGE_TOUCH_ATTR(version, S_IRUGO | S_IWUSR, show_version, NULL);
 static LGE_TOUCH_ATTR(fw_ver, S_IRUGO | S_IWUSR, show_atcmd_fw_ver, NULL);
 static LGE_TOUCH_ATTR(testmode_ver, S_IRUGO | S_IWUSR, show_testmode_fw_ver, NULL);
 static LGE_TOUCH_ATTR(sd, S_IRUGO | S_IWUSR, show_sd_info, NULL);
-static LGE_TOUCH_ATTR(fw_upgrade, S_IRUGO | S_IWUSR, NULL, store_upgrade);
+static LGE_TOUCH_ATTR(fw_upgrade, S_IRUGO | S_IWUSR, show_upgrade, store_upgrade);
 static LGE_TOUCH_ATTR(rewrite_bin_fw, S_IRUGO | S_IWUSR, NULL, store_rewrite_bin_fw);
 static LGE_TOUCH_ATTR(ic_rw, S_IRUGO | S_IWUSR, show_ic_rw, store_ic_rw);
+static LGE_TOUCH_ATTR(debug_abs, S_IRUGO | S_IWUSR, NULL, store_debug_abs);
+
 
 static struct attribute *lge_touch_attribute_list[] = {
 	&lge_touch_attr_keyguard.attr,
@@ -1295,6 +1349,7 @@ static struct attribute *lge_touch_attribute_list[] = {
 	&lge_touch_attr_fw_upgrade.attr,
 	&lge_touch_attr_rewrite_bin_fw.attr,
 	&lge_touch_attr_ic_rw.attr,
+	&lge_touch_attr_debug_abs.attr,
 	NULL,
 };
 

@@ -73,7 +73,7 @@
 #define MAX17048_POLLING_PERIOD_3       5000
 #endif
 
-#ifdef CONFIG_LGE_PM_VZW_LLK
+#ifdef CONFIG_LGE_PM_LLK_MODE
 #define LLK_MAX_THR_SOC 35
 #define LLK_MIN_THR_SOC 30
 #endif
@@ -111,7 +111,7 @@ struct max17048_chip {
 #ifdef CONFIG_MAX17048_POLLING
 	struct delayed_work		polling_work;
 #endif
-#ifdef CONFIG_LGE_PM_VZW_LLK
+#ifdef CONFIG_LGE_PM_LLK_MODE
 	struct power_supply		*usb_psy;
 #endif
 };
@@ -393,7 +393,7 @@ static void max17048_work(struct work_struct *work)
 	struct max17048_chip *chip;
 	int ret = 0;
 
-#ifdef CONFIG_LGE_PM_VZW_LLK
+#ifdef CONFIG_LGE_PM_LLK_MODE
 	union power_supply_propval val = {0,};
 #endif
 
@@ -444,7 +444,7 @@ static void max17048_work(struct work_struct *work)
 				goto psy_error;
 		}
 
-#ifdef CONFIG_LGE_PM_VZW_LLK
+#ifdef CONFIG_LGE_PM_LLK_MODE
 		if (!chip->usb_psy) {
 			chip->usb_psy = power_supply_get_by_name("usb");
 

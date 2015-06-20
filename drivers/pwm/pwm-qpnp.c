@@ -744,14 +744,15 @@ static int qpnp_lpg_configure_pwm(struct qpnp_pwm_chip *chip)
 	if (rc)
 		return rc;
 #if defined(CONFIG_MACH_MSM8916_G4STYLUSDSN_GLOBAL_COM) || \
-defined(CONFIG_MACH_MSM8916_G4STYLUSDS_GLOBAL_COM) || \
 defined(CONFIG_MACH_MSM8916_G4STYLUSN_GLOBAL_COM) || \
 defined(CONFIG_MACH_MSM8916_STYLUSC_SPR_US) || \
 defined(CONFIG_MACH_MSM8916_G4STYLUS_CRK_US) || \
 defined(CONFIG_MACH_MSM8916_G4STYLUSN_MPCS_US) || \
 defined(CONFIG_MACH_MSM8916_G4STYLUSN_RGS_CA) || \
 defined(CONFIG_MACH_MSM8916_G4STYLUSN_TMO_US) || \
-defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR)
+defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR) || \
+defined(CONFIG_MACH_MSM8916_C90NAS_SPR_US) || \
+defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
 	qpnp_set_pwm_type_config(&value, 0, 0, 0, 0);
 #else
 	qpnp_set_pwm_type_config(&value, 1, 0, 0, 0);

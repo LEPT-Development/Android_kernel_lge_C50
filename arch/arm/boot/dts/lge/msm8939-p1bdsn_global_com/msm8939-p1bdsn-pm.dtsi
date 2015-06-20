@@ -29,26 +29,38 @@
 	lge,cable-910k = <1140000 1500 1500>;
 	lge,cable-none = <1900000 810  500>;
 
-	qcom,vddmax-mv = <4350>;
-	qcom,vddsafe-mv = <4380>;
-	qcom,vinmin-mv = <4470>;
+	qcom,vddmax-mv = <4400>;
+	qcom,vddsafe-mv = <4430>;
+	qcom,vinmin-mv = <4524>;
 	qcom,tchg-mins = <480>;
+	qcom,collapsible-chgr-support;
 	qcom,btc-disabled;
 	qcom,resume-soc = <98>;
 	qcom,disable-vbatdet-based-recharge;
+	/delete-property/ qcom,charging-disabled;
 };
 
 &soc{
-	
-	qcom,clock-a7@0b011050	{
-		lge,factory-bin =
+	clock_cpu: qcom,cpu-clock-8939@b111050{
+		lge,factory-bin-c1 =
 			<          0 0>,
-			<  200000000 1>,
-			<  400000000 2>,
-			<  533333000 3>,
-			<  800000000 4>;
+			<  400000000 3>,
+			<  800000000 9>,
+			<  960000000 12>;
+		lge,factory-bin-c0 =
+			<          0 0>,
+			<  250000000 3>,
+			<  800000000 12>;
+		lge,factory-bin-cci =
+			<          0 0>,
+			<  200000000 3>,
+			<  300000000 11>,
+			<  400000000 15>;
 	};
 
+	qcom,msm-thermal {
+		qcom,little-freq-mitigation-value = <249600>;
+	};
 
 	i2c_1: i2c@78b5000 { /* BLSP1 QUP1 */
 		compatible = "qcom,i2c-msm-v2";
@@ -76,7 +88,7 @@
 
 	apc_vreg_corner: regulator@b018000 {
            compatible = "qcom,cpr-regulator";
-		vdd-apc-supply = <&ncp6335d >;
+		vdd-apc-supply = <&fan53555>;
         vdd-apc-optional-prim-supply = <&ncp6335d>;
 	};
 
@@ -91,6 +103,11 @@
 		qcom,limit-temp = <90>;
 		qcom,freq-step = <1>;
 		qcom,core-limit-temp = <100>;
+	};
+
+	apc_vreg_corner: regulator@b018000 {
+		qcom,cpr-voltage-ceiling = <1075000 1150000 1350000 >;
+		qcom,cpr-voltage-floor = <1075000 1075000 1187500>;
 	};
 
 	i2c_3: i2c@78b7000 { /* BLSP1 QUP3 */
@@ -120,7 +137,7 @@
 
 &i2c_1 {
 	bq24296@6b {
-		status = "ok";
+		status = "disable";
 		compatible = "ti,bq24296-charger";
 		reg = <0x6b>;
 		interrupt-parent = <&msm_gpio>;
@@ -156,7 +173,7 @@
 		qcom,bq24296-vadc = <&pm8916_vadc>;
 	};
 	max17048@36 {
-                status = "ok";
+                status = "disable";
                 compatible = "maxim,max17048";
                 interrupt-parent = <&msm_gpio>;
                 interrupts = <0x1 0x0>;
@@ -173,7 +190,7 @@
 
 &i2c_3 {
 	max14656@35 {
-		status = "ok";
+		status = "disable";
 		compatible = "maxim,max14656";
 		interrupt-parent = <&msm_gpio>;
 		interrupts = <51 0x0>;
@@ -187,10 +204,11 @@
 	    compatible = "onnn,ncp6335d-regulator";
         revision = "rev_0...";
 	};
-/*    fan53555: fan53555-regulator@60 {
+    fan53555: fan53555-regulator@60 {
        compatible = "fairchild,fan53555-regulator";
+       status = "disable";
        revision = "...rev_0";
-	};*/
+	};
 };
 
 &spmi_bus {
@@ -267,26 +285,20 @@
 };
 
 / {
-	lge_lgc_2100mah_batterydata: qcom,lgc-battery-data {
+	lge_lgc_2300mah_batterydata: qcom,lgc-battery-data {
 		qcom,rpull-up-kohm = <150>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "../msm8916-lge-common/batterydata_LGE_lgc_2100mAh_52UH.dtsi"
+		#include "../msm8939-lge-common/batterydata_LGE_lgc_2300mAh_49SF.dtsi"
 	};
 
-	lge_tocad_2100mah_batterydata: qcom,tocad-battery-data {
+	lge_tocad_2300mah_batterydata: qcom,tocad-battery-data {
 		qcom,rpull-up-kohm = <150>;
 		qcom,vref-batt-therm = <1800000>;
 
-		#include "../msm8916-lge-common/batterydata_LGE_tocad_2100mAh_52UH.dtsi"
+		#include "../msm8939-lge-common/batterydata_LGE_tocad_2300mAh_49SF.dtsi"
 	};
 
-	lge_byd_2100mah_batterydata: qcom,byd-battery-data {
-		qcom,rpull-up-kohm = <150>;
-		qcom,vref-batt-therm = <1800000>;
-
-		#include "../msm8916-lge-common/batterydata_LGE_byd_2100mAh_52UH.dtsi"
-	};
 };
 
 &pm8916_bms {
@@ -297,9 +309,8 @@
 	qcom,s2-fifo-length = <8>;
 	qcom,shutdown-soc-valid-limit = <20>;
 	qcom,force-bms-active-on-charger;
-	qcom,lgc-battery-data = <&lge_lgc_2100mah_batterydata>;
-	qcom,tocad-battery-data = <&lge_tocad_2100mah_batterydata>;
-	qcom,byd-battery-data = <&lge_byd_2100mah_batterydata>;
+	qcom,lgc-battery-data = <&lge_lgc_2300mah_batterydata>;
+	qcom,tocad-battery-data = <&lge_tocad_2300mah_batterydata>;
 };
 
 &pm8916_vadc {

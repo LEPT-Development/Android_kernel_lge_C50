@@ -5521,6 +5521,9 @@ static ssize_t bma2x2_fifo_data_out_frame_show(struct device *dev,
 
 	struct bma2x2_data *bma2x2 = dev_get_drvdata(dev);
 
+	if(!atomic_read(&bma2x2->enable))
+		return 0;
+
 	if (bma2x2_get_fifo_data_sel(bma2x2->bma2x2_client, &fifo_datasel) < 0)
 		return sprintf(buf, "Read data sel error\n");
 

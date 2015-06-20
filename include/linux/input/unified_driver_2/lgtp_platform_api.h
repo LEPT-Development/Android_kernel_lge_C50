@@ -51,6 +51,12 @@
 int Lu20xx_I2C_Read ( struct i2c_client *client, u16 addr, u8 *rxbuf, int len );
 int Lu20xx_I2C_Write ( struct i2c_client *client, u16 addr, u8 *txbuf, int len );
 #endif
+
+#if defined ( TOUCH_DEVICE_MIT200 )
+int MIT200_I2C_Read(struct i2c_client *client, u8* cmd,  int cmdLen, u8 *rxbuf, int len);
+int MIT200_I2C_Write(struct i2c_client *client, u8* cmd,  int cmdLen, u8 *txbuf, int len);
+#endif
+
 int Touch_I2C_Read_Byte ( struct i2c_client *client, u8 addr, u8 *rxbuf );
 int Touch_I2C_Write_Byte ( struct i2c_client *client, u8 addr, u8 txbuf );
 int Touch_I2C_Read ( struct i2c_client *client, u8 addr, u8 *rxbuf, int len );

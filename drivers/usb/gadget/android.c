@@ -528,7 +528,8 @@ static void android_work(struct work_struct *data)
 			msleep(50); /*wait for usb gadget disconnect*/
 			kernel_restart(NULL);
 		} else if (lge_pm_get_cable_type() == CABLE_910K &&
-					(lge_get_sbl_cable_type() != 11 || !firstboot_check)) {
+				(lge_get_sbl_cable_type() != 11 || !firstboot_check) &&
+				!lge_get_laf_mode()) {
 			usb_gadget_disconnect(cdev->gadget);
 			usb_ep_dequeue(cdev->gadget->ep0, cdev->req);
 			pr_info("[FACTORY] reset due to 910K cable, pm:%d, sbl:%d, firstboot_check:%d\n",
@@ -3492,7 +3493,6 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	if (!strcmp(b, "charge_only"))
 		dev->check_charge_only = true;
 #endif
-
 	dev->cdev->gadget->streaming_enabled = false;
 	while (b) {
 		conf_str = strsep(&b, ":");

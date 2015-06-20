@@ -81,7 +81,7 @@
 #define BUF_SIZE_PRINT (16)
 
 /*! FIFO 1024 byte, max fifo frame count not over 150 */
-#define FIFO_FRAME_CNT 20
+#define FIFO_FRAME_CNT (20)
 #define FIFO_DATA_BUFSIZE    1024
 
 
@@ -123,6 +123,7 @@
 #define FIFO_HEAD_M_G_A         (FIFO_HEAD_M | FIFO_HEAD_G | FIFO_HEAD_A)
 
 #define FIFO_HEAD_SENSOR_TIME        0x44
+#define FIFO_HEAD_CONFIG_FRAME       0x48
 #define FIFO_HEAD_SKIP_FRAME        0x40
 #define FIFO_HEAD_OVER_READ_LSB       0x80
 #define FIFO_HEAD_OVER_READ_MSB       0x00
@@ -212,8 +213,17 @@ enum BMI_FIFO_DATA_SELECT_T {
 
 /*bmi interrupt about step_detector and sgm*/
 #define INPUT_EVENT_STEP_DETECTOR    5
-#define INPUT_EVENT_SGM              REL_DIAL
+#define INPUT_EVENT_SGM              REL_DIAL/*7*/
 
+#ifdef BMI160_CALIBRATION
+/* calibration tilt limit against x/y axis pre-calculated by "RAW_VALUE(8192) * sin (11 deg)" */
+#define BMI160_FAST_CALIB_TILT_LIMIT	(2500)
+#define BMI160_SHAKING_DETECT_THRESHOLD	(1000)
+#define BMI160_GYRO_SHAKING_DETECT_THRESHOLD	(30)
+#define INPUT_EVENT_FAST_ACC_CALIB_DONE    6
+#define INPUT_EVENT_FAST_GYRO_CALIB_DONE    4
+
+#endif
 
 
 /*!
@@ -280,6 +290,11 @@ struct fifo_sensor_time_t {
 	u32 mag_ts;
 };
 
+struct pedometer_data_t {
+	/*! Fix step detector misinformation for the first time*/
+	u8 wkar_step_detector_status;
+	u32 last_step_counter_value;
+};
 
 struct bmi_client_data {
 	struct bmi160_t device;
@@ -294,10 +309,15 @@ struct bmi_client_data {
 	struct odr_t odr;
 	struct range_t range; /*TO DO*/
 	struct err_status err_st;
+	struct pedometer_data_t pedo_data;
 	s8 place;
 	u8 selftest;
 
 	atomic_t wkqueue_en; /*TO DO acc gyro mag*/
+
+  atomic_t acc_wkqueue_en;
+  atomic_t gyro_wkqueue_en;
+  atomic_t mag_wkqueue_en;
 	atomic_t delay;
 	atomic_t selftest_result;
 
@@ -318,6 +338,14 @@ struct bmi_client_data {
 	int IRQ;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend_handler;
+#endif
+#ifdef BMI160_CALIBRATION
+  atomic_t fast_calib_x_rslt;
+  atomic_t fast_calib_y_rslt;
+  atomic_t fast_calib_z_rslt;
+  atomic_t fast_calib_rslt;
+  atomic_t gyro_fast_calib_rslt;
+//  struct bmi160_axis_data_t backup_OFFSET;
 #endif
 };
 

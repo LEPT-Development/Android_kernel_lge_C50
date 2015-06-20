@@ -97,6 +97,10 @@ Parent node optional properties:
 					charger module, it is used to control a
 					led which can act as a charger led as well
 					as a general notification led.
+- qcom,collapsible-chgr-support		If specifed the collapsible charger feature
+					will be supported. LBC will disable VIN_MIN
+					comparator and use chg_gone interrupt to
+					detect charger removal.
 
 Sub node required structure:
 - A qcom,charger node must be a child of an SPMI node that has specified

@@ -56,6 +56,12 @@ config LGE_MMC_PON_SHORT
         if PON is not send properly.
 # LGE_CHANGE_E : D3-5T-FS@lge.com
 
+config LGE_SHOW_SDCARD_DETECT_PIN_STATUS
+    bool "Show SD Card Detect pin status"
+    default n
+    help
+        Show SD Card Detect pin status at /sys/devices/soc.0/7864900.sdhci/mmc_host/mmc1/cd_status
+
 config LGE_MMC_BKOPS_ENABLE
     bool "enable BKOPS for eMMC"
     depends on MMC != n

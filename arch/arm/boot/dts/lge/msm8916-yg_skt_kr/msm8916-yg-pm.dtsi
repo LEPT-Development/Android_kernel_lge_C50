@@ -27,7 +27,7 @@
 	lge,cable-330k = <735000 1200 500>;
 	lge,cable-620k = <955000 1200 500>;
 	lge,cable-910k = <1140000 1500 1500>;
-	lge,cable-none = <1900000 1000  500>;
+	lge,cable-none = <1900000 900  500>;
 
 	qcom,vddmax-mv = <4400>;
 	qcom,vddsafe-mv = <4430>;
@@ -108,7 +108,7 @@ qcom,pm8916@0 {
 			qcom,pon_3 { /* KPD_PWR_N AND RESIN_N reset */
 				status = "ok";
 				qcom,pon-type = <3>;
-				qcom,support-reset = <1>;
+				qcom,support-reset = <0>;
 				qcom,pull-up = <1>;
 				qcom,s1-timer = <6720>;
 				qcom,s2-timer = <2000>;
@@ -159,6 +159,19 @@ qcom,pm8916@0 {
 		rt,r2_gain_lcap = < 1 175  0 25  1 175>;
 		rt,r3_gain_lcap = < 1 325  0 0 1 325>;
 		rt,r4_gain_lcap = < 1 25 0 575 1 25>;
+	};
+
+	BL49SF_TOCAD_2300MAH_BATTERY: rt,tocad-battery-data {
+		rt,vgpara_hcap = <0x8119 0x824B 0x8332 0x847D 0x8501>;
+		rt,vgpara_lcap = <0x810A 0x824B 0x833C 0x847D 0x8501>;
+		rt,r1_gain_hcap = < 0 25 0 750 0 25>;
+		rt,r2_gain_hcap = < 1 250  0 500  1 250>;
+		rt,r3_gain_hcap = < 1 175  0 350 1 175>;
+		rt,r4_gain_hcap = < 1 300 0 0 1 300>;
+		rt,r1_gain_lcap = < 0 85  0 350  0 85>;
+		rt,r2_gain_lcap = < 1 250  0 0  1 250>;
+		rt,r3_gain_lcap = < 1 200  0 425 1 200>;
+		rt,r4_gain_lcap = < 1 300 0 0 1 300>;
 	};
 
 	BL49SF_DEFAULT_2300MAH_BATTERY: rt,default-battery-data {
@@ -218,6 +231,7 @@ qcom,pm8916@0 {
 		rt,vgcomp0 = <0xAB>;
 		rt,temp_base = <5 5 25 45>;
 		rt,lgc-battery-data = <&BL49SF_LGC_2300MAH_BATTERY>;
+		rt,tocad-battery-data = <&BL49SF_TOCAD_2300MAH_BATTERY>;
 		rt,default-battery-data = <&BL49SF_DEFAULT_2300MAH_BATTERY>;
 	};
 

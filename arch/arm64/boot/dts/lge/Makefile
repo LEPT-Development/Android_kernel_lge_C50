@@ -6,7 +6,11 @@ else
 ifeq ($(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM),y)
         DTS_TARGET := p1bdsn_global_com
 else
+ifeq ($(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR),y)
+        DTS_TARGET := p1bssn_skt_kr
+else
         DTS_TARGET := altev2_vzw
+endif
 endif
 endif
 
@@ -20,8 +24,13 @@ ifeq ($(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM),y)
 dtb-y += msm8939-p1bdsn.dtb
 
 else
+ifeq ($(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR),y)
+dtb-y += msm8939-p1bssn.dtb
+
+else
 dtb-y += msm8939-$(DTS_TARGET).dtb \
          msm8936-$(DTS_TARGET).dtb
+endif
 endif
 endif
          

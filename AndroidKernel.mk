@@ -125,9 +125,33 @@ ifneq ($(PRODUCT_SUPPORT_OPEN_EXFAT), y)
 endif
 endif
 
+ifeq ($(TARGET_CARRIER), SPR)
+ifeq ($(TARGET_BUILD_VARIANT), user)
+	perl $(ANDROID_BUILD_TOP)/kernel/scripts/sign-file sha1 \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.priv $(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.x509 \
+	$(ANDROID_BUILD_TOP)/device/lge/$(MYDEVICE)/$(TARGET_PRODUCT)/products/itson/systemassets/system/lib/modules/itson_module1_user.ko \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_MODULES_OUT)/itson_module1.ko
+
+	perl $(ANDROID_BUILD_TOP)/kernel/scripts/sign-file sha1 \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.priv $(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.x509 \
+	$(ANDROID_BUILD_TOP)/device/lge/$(MYDEVICE)/$(TARGET_PRODUCT)/products/itson/systemassets/system/lib/modules/itson_module2_user.ko \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_MODULES_OUT)/itson_module2.ko
+else
+	perl $(ANDROID_BUILD_TOP)/kernel/scripts/sign-file sha1 \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.priv $(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.x509 \
+	$(ANDROID_BUILD_TOP)/device/lge/$(MYDEVICE)/$(TARGET_PRODUCT)/products/itson/systemassets/system/lib/modules/itson_module1_debug.ko \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_MODULES_OUT)/itson_module1.ko
+
+	perl $(ANDROID_BUILD_TOP)/kernel/scripts/sign-file sha1 \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.priv $(ANDROID_BUILD_TOP)/$(KERNEL_OUT)/signing_key.x509 \
+	$(ANDROID_BUILD_TOP)/device/lge/$(MYDEVICE)/$(TARGET_PRODUCT)/products/itson/systemassets/system/lib/modules/itson_module2_debug.ko \
+	$(ANDROID_BUILD_TOP)/$(KERNEL_MODULES_OUT)/itson_module2.ko
+endif
+endif
+
 # porting bootchart2 to android
 ifeq ($(INIT_BOOTCHART2),true)
-ifeq ($(TARGET_DEVICE),$(filter $(TARGET_DEVICE), altev2 p1bdsn ))
+ifeq ($(TARGET_DEVICE),$(filter $(TARGET_DEVICE), altev2))
 KERNEL_DEFCONFIG_PATH:=kernel/arch/arm64/configs/$(KERNEL_DEFCONFIG)
 KERNEL_DEFCONFIG_BC2_PATH:=kernel/arch/arm64/configs/bc2_$(KERNEL_DEFCONFIG)
 else

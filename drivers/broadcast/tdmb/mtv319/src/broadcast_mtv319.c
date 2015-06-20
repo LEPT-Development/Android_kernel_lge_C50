@@ -34,6 +34,9 @@
 #ifdef FEATURE_DMB_USE_PINCTRL
 #include <linux/pinctrl/consumer.h>
 #endif
+#if defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
+#include <mach/board_lge.h>
+#endif
 
 #include "../../broadcast_tdmb_drv_ifdef.h"
 
@@ -627,6 +630,12 @@ static int __broadcast_dev_init broadcast_tdmb_mtv319_drv_init(void)
 {
 	int ret;
 
+#if defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
+	if(lge_get_board_revno() >= HW_REV_B) {
+		printk("broadcast_tdmb_mtv319_drv_init rev no(%d)\n",lge_get_board_revno());
+		return ERROR;
+	}
+#endif
 	if(broadcast_tdmb_drv_check_module_init() != OK) {
 		ret = ERROR;
 		return ret;

@@ -29,7 +29,7 @@
 		};
 
 		qcom,pwm@bc00 {
-			status = "disable";
+			status = "okay";
 			compatible = "qcom,qpnp-pwm";
 			reg = <0xbc00 0x100>;
 			reg-names = "qpnp-lpg-channel-base";

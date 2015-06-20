@@ -11,7 +11,9 @@
 #include <linux/delay.h>
 #include <linux/workqueue.h>
 #include <linux/wakelock.h>         /* wake_lock, unlock */
-
+#if defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
+#include <mach/board_lge.h>
+#endif
 #include "../../broadcast_tdmb_drv_ifdef.h"
 #include "../inc/broadcast_fc8080.h"
 #include "../inc/fci_types.h"
@@ -73,7 +75,7 @@ struct tdmb_fc8080_ctrl_blk
 #endif
     uint32                            dmb_en;
     uint32                            dmb_irq;
-#ifdef CONFIG_MACH_MSM8926_VFP_KR
+#if defined (CONFIG_MACH_MSM8926_VFP_KR)||defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
     uint32                            dmb_ant;
 #endif
 };
@@ -287,7 +289,7 @@ int tdmb_fc8080_power_on(void)
 #endif
 //        gpio_set_value(PM8058_GPIO_PM_TO_SYS(DMB_ANT_SEL_P-1), 0);
 //        gpio_set_value(PM8058_GPIO_PM_TO_SYS(DMB_ANT_SEL_N-1), 1);
-#ifdef CONFIG_MACH_MSM8926_VFP_KR
+#if defined (CONFIG_MACH_MSM8926_VFP_KR)||defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
         gpio_set_value(fc8080_ctrl_info.dmb_ant, 0);
 #endif
 
@@ -330,7 +332,7 @@ int tdmb_fc8080_power_off(void)
 
 //        gpio_set_value(PM8058_GPIO_PM_TO_SYS(DMB_ANT_SEL_P-1), 1);    // for ESD TEST
 //        gpio_set_value(PM8058_GPIO_PM_TO_SYS(DMB_ANT_SEL_N-1), 0);
-#ifdef CONFIG_MACH_MSM8926_VFP_KR
+#if defined (CONFIG_MACH_MSM8926_VFP_KR)||defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
         gpio_set_value(fc8080_ctrl_info.dmb_ant, 1);
 #endif
 
@@ -562,7 +564,7 @@ static int tdmb_configure_gpios(void)
         printk("%s:Failed GPIO DMB_INT_N request!!!\n",__func__);
     }
 
-#ifdef CONFIG_MACH_MSM8926_VFP_KR
+#if defined (CONFIG_MACH_MSM8926_VFP_KR )||defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
     fc8080_ctrl_info.dmb_ant = of_get_named_gpio(fc8080_ctrl_info.pdev->dev.of_node,"tdmb-fc8080,ant-gpio",0);
 
     rc = gpio_request(fc8080_ctrl_info.dmb_ant, "DMB_ANT");
@@ -595,7 +597,7 @@ static int broadcast_tdmb_fc8080_probe(struct spi_device *spi)
     fc8080_ctrl_info.spi_ptr                 = spi;
     fc8080_ctrl_info.spi_ptr->mode             = SPI_MODE_0;
     fc8080_ctrl_info.spi_ptr->bits_per_word     = 8;
-    fc8080_ctrl_info.spi_ptr->max_speed_hz     = (15000*1000);
+    fc8080_ctrl_info.spi_ptr->max_speed_hz     = (16000*1000);
     fc8080_ctrl_info.pdev = to_platform_device(&spi->dev);
 
 #ifdef FEATURE_DMB_USE_BUS_SCALE
@@ -726,6 +728,12 @@ static int broadcast_tdmb_fc8080_check_chip_id(void)
 int __broadcast_dev_init broadcast_tdmb_fc8080_drv_init(void)
 {
     int rc;
+#if defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
+    if(lge_get_board_revno() < HW_REV_B) {
+        printk("broadcast_tdmb_fc8080_drv_init rev no(%d)\n",lge_get_board_revno());
+        return ERROR;
+    }
+#endif
 
     if(broadcast_tdmb_drv_check_module_init() != OK) {
         rc = ERROR;

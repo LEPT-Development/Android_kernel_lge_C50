@@ -44,7 +44,7 @@ static u32 qfprom_verification_blow_data(void);
 static u32 qfprom_read(u32 fuse_addr);
 static u32 qfprom_secdat_read(void);
 static u32 qfprom_verify_data(int ret_type);
-static u32 qfprom_version_check(void);
+static u32 qfprom_version_check(u32 check_type);
 
 static u32 qfprom_address;
 static u32 qfprom_lsb_value;
@@ -210,25 +210,65 @@ static ssize_t qfprom_msb_store(struct device *dev, struct device_attribute *att
 }
 static DEVICE_ATTR(msb, S_IWUSR | S_IRUGO, qfprom_msb_show, qfprom_msb_store);
 
-static ssize_t qfprom_rbvalue_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t qfprom_read_sbl1_version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-  int i;
-  char tmpbuf[300] = "";
-  if (qfprom_version_check() == -1) {
-    sprintf(tmpbuf, "Anti-rollback fuse is not blowed");
-    printk(KERN_INFO "[QFUSE]%s : %s\n", __func__, tmpbuf);
-    return sprintf(buf, "%s\n", tmpbuf);
-  }
-
-  for (i = 0; i < ARRAY_SIZE(version_info); i++) {
-    sprintf(tmpbuf, "%s%d ", tmpbuf, version_info[i].cnt);
-  }
-  printk(KERN_INFO "[QFUSE]%s : %s\n", __func__, tmpbuf);
-
-  return sprintf(buf, "%s\n", tmpbuf);
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check SBL1 version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_SBL1);
+  return sprintf(buf, "%d\n", ret);
 }
 
-static DEVICE_ATTR(rbv, S_IWUSR | S_IRUGO, qfprom_rbvalue_show, NULL);
+static DEVICE_ATTR(version_sbl1, S_IWUSR | S_IRUGO, qfprom_read_sbl1_version_show, NULL);
+
+static ssize_t qfprom_read_tz_version_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check TZ version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_TZ);
+  return sprintf(buf, "%d\n", ret);
+}
+
+static DEVICE_ATTR(version_tz, S_IWUSR | S_IRUGO, qfprom_read_tz_version_show, NULL);
+
+static ssize_t qfprom_read_hyp_version_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check HYP version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_HYP);
+  return sprintf(buf, "%d\n", ret);
+}
+
+static DEVICE_ATTR(version_hyp, S_IWUSR | S_IRUGO, qfprom_read_hyp_version_show, NULL);
+
+static ssize_t qfprom_read_rpm_version_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check RPM version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_RPM);
+  return sprintf(buf, "%d\n", ret);
+}
+
+static DEVICE_ATTR(version_rpm, S_IWUSR | S_IRUGO, qfprom_read_rpm_version_show, NULL);
+
+static ssize_t qfprom_read_pil_version_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check PIL version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_PIL);
+  return sprintf(buf, "%d\n", ret);
+}
+
+static DEVICE_ATTR(version_pil, S_IWUSR | S_IRUGO, qfprom_read_pil_version_show, NULL);
+
+static ssize_t qfprom_read_appsbl_version_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+  int ret = -1;
+  printk(KERN_INFO "[QFUSE]%s : Check APPSBL version\n", __func__);
+  ret = qfprom_version_check(QFPROM_VERSION_APPSBL);
+  return sprintf(buf, "%d\n", ret);
+}
+
+static DEVICE_ATTR(version_appsbl, S_IWUSR | S_IRUGO, qfprom_read_appsbl_version_show, NULL);
 
 static struct attribute *qfprom_attributes[] = {
   &dev_attr_sec_read.attr,
@@ -240,7 +280,12 @@ static struct attribute *qfprom_attributes[] = {
   &dev_attr_lsb.attr,
   &dev_attr_msb.attr,
   &dev_attr_read.attr,
-  &dev_attr_rbv.attr,
+  &dev_attr_version_sbl1.attr,
+  &dev_attr_version_tz.attr,
+  &dev_attr_version_rpm.attr,
+  &dev_attr_version_appsbl.attr,
+  &dev_attr_version_hyp.attr,
+  &dev_attr_version_pil.attr,
   NULL
 };
 
@@ -265,6 +310,9 @@ static u32 qfprom_verification_blow_data(void)
       case QFPROM_SEC_HW_KEY_2:
       case QFPROM_SEC_HW_KEY_3:
       case QFPROM_SEC_HW_KEY_4:
+      case QFPROM_ANTIROLLBACK1:
+      case QFPROM_ANTIROLLBACK2:
+      case QFPROM_ANTIROLLBACK3:
         break;
 
       case QFPROM_SEC_HW_KEY:
@@ -635,31 +683,31 @@ static u32 qfprom_verify_data(int type)
   }
 }
 
-static u32 qfprom_version_check(void)
+static u32 qfprom_version_check(u32 check_type)
 {
-  int i = 0, j = 0, k = 0;
-  u32 v_l = 0, v_m = 0;
+  int i = 0, j = 0;
+  u32 v_l = 0, v_m = 0, ret = 0;
 
   if (((qfprom_read(anti_rollback_enable.addr+0)&anti_rollback_enable.lsb) != anti_rollback_enable.lsb) ||
-      ((qfprom_read(anti_rollback_enable.addr+4)&anti_rollback_enable.msb) != anti_rollback_enable.msb))
+      ((qfprom_read(anti_rollback_enable.addr+4)&anti_rollback_enable.msb) != anti_rollback_enable.msb)) {
+    printk(KERN_INFO "[QFUSE]%s : Anti-rollback fuse is not blowed\n", __func__);
     return -1;
+  }
 
-  for (i = 0; i < ARRAY_SIZE(version_info); i++) {
-    for (j = 0; j < ARRAY_SIZE(version_bits); j++) {
-      if(version_info[i].type == version_bits[j].type) {
-        v_l = qfprom_read(version_bits[j].addr+0) & version_bits[j].lsb;
-        v_m = qfprom_read(version_bits[j].addr+4) & version_bits[j].msb;
-        for (k = 0; k < 32; k++) {
-          if ((v_l & (0x1 << k)) != 0)
-            version_info[i].cnt++;
-          if ((v_m & (0x1 << k)) != 0)
-            version_info[i].cnt++;
-        }
+  for (i = 0; i < ARRAY_SIZE(version_bits); i++) {
+    if(version_bits[i].type == check_type) {
+      v_l = qfprom_read(version_bits[i].addr+0) & version_bits[i].lsb;
+      v_m = qfprom_read(version_bits[i].addr+4) & version_bits[i].msb;
+      for (j = 0; j < 32; j++) {
+        if ((v_l & (0x1 << j)) != 0)
+          ret++;
+        if ((v_m & (0x1 << j)) != 0)
+          ret++;
       }
     }
   }
-
-  return 0;
+  printk(KERN_INFO "[QFUSE]%s : Version - %d\n", __func__, ret);
+  return ret;
 }
 
 static int __exit lge_qfprom_interface_remove(struct platform_device *pdev)

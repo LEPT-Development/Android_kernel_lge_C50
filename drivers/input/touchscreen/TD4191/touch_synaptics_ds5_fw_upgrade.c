@@ -54,6 +54,7 @@ unsigned short SynaF35DataBase;
 unsigned short SynaF34DataBase;
 unsigned short SynaF34QueryBase;
 unsigned short SynaF01DataBase;
+unsigned short SynaF01ControlBase;
 unsigned short SynaF01CommandBase;
 unsigned short SynaF01QueryBase;
 
@@ -483,6 +484,7 @@ int SynaScanPDT(struct synaptics_ts_data *ts) //void SynaSetup()
 			break;
 		case 0x01:
 			SynaF01DataBase = buffer[3];
+			SynaF01ControlBase = buffer[2];
 			SynaF01CommandBase = buffer[1];
 			SynaF01QueryBase = buffer[0];//no ds4
 			break;
@@ -597,6 +599,7 @@ void SynaEnableFlashing(struct synaptics_ts_data *ts)
 {
 	//    int ret;
 	unsigned char uStatus = 0;
+	unsigned char zero = 0x00;
 	enum FlashCommand cmd;
 	unsigned char uData[3] = {0};
 	int firmware_version;
@@ -607,6 +610,9 @@ void SynaEnableFlashing(struct synaptics_ts_data *ts)
 	readRMI (ts->client, SynaF01DataBase, &uStatus, 1);
 
 	if ((uStatus & 0x40) == 0) {
+		writeRMI(ts->client, SynaF01ControlBase + 1, &zero, 1);
+		msleep(20);
+
 		// Reflash is enabled by first reading the bootloader ID
 		// from the firmware and write it back
 		SynaReadBootloadID(ts);
@@ -618,6 +624,9 @@ void SynaEnableFlashing(struct synaptics_ts_data *ts)
 		cmd = m_uF34ReflashCmd_Enable;
 		writeRMI(ts->client, SynaF34_FlashControl,
 				(unsigned char *)&cmd, 1);
+
+		msleep(100);
+
 		SynaWaitForATTN(1000, ts);
 
 		//I2C addrss may change
@@ -1017,6 +1026,9 @@ void CompleteReflash(struct synaptics_ts_data *ts)
 		SynaUpdateConfig(ts);
 
 	SynaFinalizeReflash(ts);
+
+        if (ts->fw_info.need_rewrite_firmware)
+	        mdss_lcd_lut_update();
 }
 
 void FlashRecovery(struct synaptics_ts_data *ts)
@@ -1029,9 +1041,7 @@ void FlashRecovery(struct synaptics_ts_data *ts)
 
 	SynaFinalizeRecovery(ts);
 
-#if 1 // refresh screen after F35 recovery.
 	mdss_lcd_lut_update();
-#endif
 
 	return;
 }

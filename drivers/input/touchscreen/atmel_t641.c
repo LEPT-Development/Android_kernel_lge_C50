@@ -1810,7 +1810,7 @@ int mxt_get_reference_chk(struct mxt_data *data)
 			// reference max-min check
 			if ((ref_max - ref_min) > (data->ref_limit.ref_rng_limit * data->pdata->ref_reg_weight_val)) {
 				retry_chk++;
-				TOUCH_DEBUG_MSG("Reference Max - Min exceed (set : %d) (Max - Min : %d) retry_chk(%d)\n"
+				TOUCH_ERR_MSG("Reference Max - Min exceed (set : %d) (Max - Min : %d) retry_chk(%d)\n"
 					, data->ref_limit.ref_rng_limit * data->pdata->ref_reg_weight_val, (ref_max - ref_min), retry_chk);
 				if (retry_chk >= 10) {
 					err_chk = 1;
@@ -2011,7 +2011,11 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 #ifdef CONFIG_TOUCHSCREEN_MSG_INFO_PRINT
 			        TOUCH_INFO_MSG("%d finger pressed <%d> : x[%3d] y[%3d] z[%3d] area[%3d]\n", ++touched_finger_count, id, x, y, amplitude, area);
 #else
-			        TOUCH_ERR_MSG("finger pressed <%d> \n", id);
+					if( lge_get_boot_mode() == LGE_BOOT_MODE_QEM_56K ) {
+						TOUCH_ERR_MSG("%d finger pressed <%d> : x[%3d] y[%3d] z[%3d] area[%3d]\n", ++touched_finger_count, id, x, y, amplitude, area);
+					} else {
+						TOUCH_ERR_MSG("finger pressed <%d> \n", id);
+					}
 #endif
                 } else { 
 			        TOUCH_ERR_MSG("* finger pressed <*> : x[***] y[***] z[***] area[***]\n");
@@ -2052,7 +2056,11 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 #ifdef CONFIG_TOUCHSCREEN_MSG_INFO_PRINT
 		    TOUCH_INFO_MSG("touch_release    <%d> : x[%3d] y[%3d]\n", id, x, y);
 #else
-		    TOUCH_ERR_MSG("touch_release    <%d> \n",id);
+			if( lge_get_boot_mode() == LGE_BOOT_MODE_QEM_56K ) {
+				TOUCH_ERR_MSG("touch_release    <%d> : x[%3d] y[%3d]\n", id, x, y);
+			} else {
+				TOUCH_ERR_MSG("touch_release    <%d> \n",id);
+			}
 #endif
         } else {
 		    TOUCH_ERR_MSG("touch_release    <*> : x[***] y[***]\n");
@@ -2563,7 +2571,11 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 			        TOUCH_INFO_MSG("touch_pressed    <%d> : x[%3d] y[%3d] P[%3d] WM[%3d] Wm[%3d] \n",
 			             id, x, y, amplitude, data->ts_data.curr_data[id].touch_major, data->ts_data.curr_data[id].touch_minor);
 #else
-			        TOUCH_ERR_MSG("touch_pressed    <%d> \n",id);
+					if( lge_get_boot_mode() == LGE_BOOT_MODE_QEM_56K ) {
+						TOUCH_ERR_MSG("touch_pressed    <%d> : x[%3d] y[%3d] P[%3d] WM[%3d] Wm[%3d] \n",id, x, y, amplitude, data->ts_data.curr_data[id].touch_major, data->ts_data.curr_data[id].touch_minor);
+					} else {
+						TOUCH_ERR_MSG("touch_pressed    <%d> \n",id);
+					}
 #endif
                 } else {
 			        TOUCH_ERR_MSG("touch_pressed    <*> : x[***] y[***] P[***] WM[***] Wm[***] \n");
@@ -2578,7 +2590,12 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 #ifdef CONFIG_TOUCHSCREEN_MSG_INFO_PRINT
             TOUCH_INFO_MSG("touch_release    <%d> : x[%3d] y[%3d]\n", id, x, y);
 #else
-            TOUCH_ERR_MSG("touch_release    <%d> \n", id);
+
+			if( lge_get_boot_mode() == LGE_BOOT_MODE_QEM_56K ) {
+				TOUCH_INFO_MSG("touch_release    <%d> : x[%3d] y[%3d]\n", id, x, y);
+			} else {
+				TOUCH_ERR_MSG("touch_release    <%d> \n", id);
+			}
 #endif
         } else {
             TOUCH_ERR_MSG("touch_release    <***> : x[***] y[***]\n");
@@ -3202,6 +3219,9 @@ static int mxt_t25_command(struct mxt_data *data, u8 value, bool wait)
 	do {
 		msleep(20);
 		ret = __mxt_read_reg(data->client, reg, 1, &command_register);
+		TOUCH_DEBUG_MSG("Test sleep 100 msec for checking pin fault !\n");
+		// Testing
+		msleep(100);
 		if (ret)
 			return ret;
 	} while ((command_register != 0) && (timeout_counter++ <= 100));
@@ -4175,17 +4195,60 @@ static ssize_t mxt_selftest(struct mxt_data *data, char *buf, int len)
 {
 	int ret = len;
 	int test_all_cmd = 0xFE;
+    u16 reg = 0;
+	int ret2 = 0;
+	int dwell_time = 50;
+	int retry = 0;
 
 	TOUCH_ERR_MSG("%s \n", __func__);
 
 	selftest_enable = true;
 	selftest_show = true;
 
-	mxt_t25_command(data, test_all_cmd, false);
-	msleep(MXT_SELFTEST_TIME);
+	// delay
+	msleep(50);
+	// lower limit Old 21000 -> 0x5208
+	// lower limit New 20700 --> 0x50DC
+	// lower limit New 20500 --> 0x5014
+	// lower limit New 20400 --> 0x4FB0
+    reg = data->T25_address + 4; // LSB
+    ret2 = mxt_write_reg(data->client, reg, 0xB0);
+    reg = data->T25_address + 5; // MSB
+    ret2 = mxt_write_reg(data->client, reg, 0x4F);
+
+	TOUCH_ERR_MSG("TEST self_test command  lower limit 20400\n");
+
+	// pint fault dwell time
+	reg = data->T25_address + 10; // dwell time
+	for( retry = 0; retry < 5; retry ++) {
+
+	    TOUCH_ERR_MSG("TEST self_test command  dwell time %dus retry %d \n", dwell_time, retry );
+
+        ret2 = mxt_write_reg(data->client, reg, dwell_time);
+		dwell_time = dwell_time +50;
+	    if(ret2){
+		    TOUCH_ERR_MSG("Write SELF TEST dwell time fail!\n");
+	    }
+	    msleep(50);
+
+        //data->self_test_status[0] = 0;
+	    mxt_t25_command(data, test_all_cmd, false);
+	    //msleep(MXT_SELFTEST_TIME);
+	    msleep(1000);
+		if(data->self_test_status[0] != 0x12) {
+	        TOUCH_ERR_MSG("TEST  no pin fault failure  \n");
+			break;
+		}
+	    selftest_enable = true;
+	    selftest_show = true;
+	}
+	// sleep time reduced from 3 sec to 20 ms
+	//msleep(MXT_SELFTEST_TIME);
+	TOUCH_ERR_MSG("TEST  self test done  \n");
 
 	if (data->self_test_status[0] == 0) {
 		ret += snprintf(buf + ret, PAGE_SIZE - ret,  "Need more time. Try Again.\n");
+	    TOUCH_ERR_MSG("TEST  need more time    \n");
 		return ret;
 	}
 
@@ -5014,6 +5077,10 @@ static ssize_t mxt_run_self_diagnostic_show(struct mxt_data *data, char *buf)
 	bool chstatus_result = 1;
 	bool rawdata_result = 1;
 
+	// Long calibration Test
+	int t46_reg = 0;
+	int ret2 =0;
+
 	int write_page = 1 << 14;
 
 	TOUCH_ERR_MSG("%s \n", __func__);
@@ -5030,6 +5097,10 @@ static ssize_t mxt_run_self_diagnostic_show(struct mxt_data *data, char *buf)
 		data->self_test_result_status = SELF_DIAGNOSTIC_STATUS_COMPLETE;
 		return len;
 	}
+    // Long calibration Test
+	t46_reg = data->T46_address;
+    ret2 = mxt_write_reg(data->client, t46_reg, 4);
+	TOUCH_ERR_MSG("LONG Calibration enabled  \n");
 
 	TOUCH_ERR_MSG("MXT_COMMAND_CALIBRATE \n");
 	mxt_t6_command(data, MXT_COMMAND_CALIBRATE, 1, false);
@@ -5069,6 +5140,10 @@ static ssize_t mxt_run_self_diagnostic_show(struct mxt_data *data, char *buf)
 	write_file(SELF_DIAGNOSTIC_FILE_PATH, ref_buf, 0);
 	msleep(30);
 
+	t46_reg = data->T46_address;
+    ret2 = mxt_write_reg(data->client, t46_reg, 0);
+	TOUCH_ERR_MSG("LONG Calibration disabled  \n");
+
 //	Do not use this function to avoid Watch dog.
 //	mxt_get_cap_diff(data);
 
@@ -5082,8 +5157,8 @@ static ssize_t mxt_run_self_diagnostic_show(struct mxt_data *data, char *buf)
 		kfree((int*)data->full_cap);
 		data->full_cap = NULL;
 	}
-
-	if ((data->self_test_status[0] == 0x01) || (data->self_test_status[0] == 0x02))
+    // Self Test check 0x02 ==> 0x12
+	if ((data->self_test_status[0] == 0x01) || (data->self_test_status[0] == 0x12))
 		chstatus_result = 0;
 
 	if (data->self_test_status[0] == 0x17)

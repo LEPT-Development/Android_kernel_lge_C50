@@ -18,7 +18,7 @@
 	};
 
 	synaptics_s3320@20 {
-		compatible = "unified_driver,ver2";
+		compatible = "unified_driver_ver2,s3320";
 		status = "ok";
 		reg = <0x20>;
 		interrupt-parent = <&msm_gpio>;

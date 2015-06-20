@@ -51,8 +51,8 @@
 		Avago,vddio_i2c_load_ua = <10000>;
 		Avago,ppcount = <8>;
 		Avago,pdrive = <0>;
-		Avago,near_offset = <500>;
-		Avago,far_offset = <180>;
+		Avago,near_offset = <300>;
+		Avago,far_offset = <100>;
 		Avago,crosstalk_max = <770>;
 		Avago,bright_threshold = <2000>;
 		Avago,dark_threshold = <1000>;

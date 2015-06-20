@@ -53,6 +53,8 @@
 #define USB_SDP_CHARGER 1
 #define USB_DCP_CHARGER 2
 #define USB_CDP_CHARGER 3
+#define USB_PROPRIETARY_CHARGER 8
+int max14656_charger_type;
 
 enum reg_address_idx {
 	REG_00 			= 0,
@@ -132,23 +134,12 @@ static int max14656_get_chg_type_status(struct max14656_chip *chip)
 		type = USB_SDP_CHARGER;
 	else if (val == CDP_CHARGER)
 		type = USB_CDP_CHARGER;
-	else if (val == DCP_CHARGER)
+	else if ((val == DCP_CHARGER) || (val == APPLE_2A_CHARGER))
 		type = USB_DCP_CHARGER;
+	else
+		type = USB_PROPRIETARY_CHARGER;
 
-#if defined(CONFIG_LGE_PM_CHARGING_VZW_POWER_REQ)
-	ret = max14656_read_reg(chip->client, MAX14656_CONTROL_3, &val);
-	if (ret) {
-		pr_err("fail to read MAX14656_CONTROL_3. ret=%d\n", ret);
-		type = NO_CHARGER;
-		return val;
-	}
 
-	val &= BIT(1);
-	if (val) {
-		pr_debug("%s : chg type manual set, type = NO_CHARGER\n", __func__);
-		type = NO_CHARGER;
-	}
-#endif
 	pr_err("%s : USB_CHG_TYPE = %d\n", __func__, type);
 
 	return type;
@@ -157,6 +148,9 @@ static int max14656_get_chg_type_status(struct max14656_chip *chip)
 static int max14656_get_vb_valid_status(struct max14656_chip *chip)
 {
 	u8 val;
+#if defined(CONFIG_LGE_PM_CHARGING_VZW_POWER_REQ)
+	u8 manual;
+#endif
 	int ret = 0;
 
 	NULL_CHECK(chip, -EINVAL);
@@ -168,6 +162,19 @@ static int max14656_get_vb_valid_status(struct max14656_chip *chip)
 
 	val = (val & VB_VALID_STATUS_MASK) >> 4;
 	pr_debug("%s : val = %d\n", __func__, val);
+
+#if defined(CONFIG_LGE_PM_CHARGING_VZW_POWER_REQ)
+	ret = max14656_read_reg(chip->client, MAX14656_CONTROL_3, &manual);
+	if (ret) {
+		pr_err("fail to read MAX14656_CONTROL_3. ret=%d\n", ret);
+		return manual;
+	}
+	manual &= BIT(1);
+	if (manual) {
+		pr_info("manual charger detection is still working\n");
+		return 0;
+	}
+#endif
 
 	return val;
 }
@@ -220,6 +227,7 @@ static void max14656_irq_worker(struct work_struct *work)
 			(reg_address[REG_03] & CHG_TYPE_STATUS_MASK)) {
 		chip->chg_detect_done = 1;
 		chip->chg_type = max14656_get_chg_type_status(chip);
+		max14656_charger_type = max14656_get_chg_type_status(chip);
 	} else
 		chip->chg_detect_done = 0;
 	pr_err("%s max14656_chg_detect_done = %d\n", __func__, chip->chg_detect_done);

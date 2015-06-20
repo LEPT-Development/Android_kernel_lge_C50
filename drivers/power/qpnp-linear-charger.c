@@ -64,8 +64,15 @@
 
 /* USB CHARGER PATH peripheral register offsets */
 #define USB_IN_VALID_MASK			BIT(1)
+#define CHG_GONE_BIT				BIT(2)
 #define USB_SUSP_REG				0x47
 #define USB_SUSPEND_BIT				BIT(0)
+#define USB_COMP_OVR1_REG			0xEA
+#define USBIN_LLIMIT_OK_MASK			LBC_MASK(1, 0)
+#define USBIN_LLIMIT_OK_NO_OVERRIDE		0x00
+#define USBIN_LLIMIT_OK_OVERRIDE_1		0x03
+#define USB_OVP_TST5_REG			0xE7
+#define CHG_GONE_OK_EN_BIT			BIT(2)
 
 /* CHARGER peripheral register offset */
 #define CHG_OPTION_REG				0x08
@@ -94,6 +101,8 @@
 #define CHG_PERPH_RESET_CTRL3_REG		0xDA
 #define CHG_COMP_OVR1				0xEE
 #define CHG_VBAT_DET_OVR_MASK			LBC_MASK(1, 0)
+#define CHG_TEST_LOOP_REG			0xE5
+#define VIN_MIN_LOOP_DISABLE_BIT		BIT(0)
 #define OVERRIDE_0				0x2
 #define OVERRIDE_NONE				0x0
 
@@ -175,11 +184,12 @@ enum {
 	THERMAL = BIT(1),
 	CURRENT = BIT(2),
 	SOC	= BIT(3),
+	COLLAPSE = BIT(5),
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
 	LGE_CHARGING_TEMP_SCENARIO = BIT(4),
 #endif
 #ifdef CONFIG_LGE_PM
-	CHG_FAIL_IRQ_HAPPEN = BIT(5),
+	CHG_FAIL_IRQ_HAPPEN = BIT(7),
 #endif
 #ifdef CONFIG_LGE_PM_FACTORY_TESTMODE
 	FACTORY_TESTMODE = BIT(6)
@@ -347,6 +357,7 @@ struct vddtrim_map vddtrim_map[] = {
  * @cfg_charger_detect_eoc:	charger can detect end of charging
  * @cfg_disable_vbatdet_based_recharge:	keep VBATDET comparator overriden to
  *				low and VBATDET irq disabled.
+ * @cfg_collapsible_chgr_support: support collapsible charger
  * @cfg_chgr_led_support:	support charger led work.
  * @cfg_safe_current:		battery safety current setting
  * @cfg_hot_batt_p:		hot battery threshold setting
@@ -400,6 +411,7 @@ struct qpnp_lbc_chip {
 	bool				fastchg_on;
 	bool				cfg_use_external_charger;
 	bool				cfg_chgr_led_support;
+	bool				non_collapsible_chgr_detected;
 	unsigned int			cfg_warm_bat_chg_ma;
 	unsigned int			cfg_cool_bat_chg_ma;
 	unsigned int			cfg_safe_voltage_mv;
@@ -408,6 +420,7 @@ struct qpnp_lbc_chip {
 	unsigned int			cfg_charger_detect_eoc;
 	unsigned int			cfg_disable_vbatdet_based_recharge;
 	unsigned int			cfg_batt_weak_voltage_uv;
+	unsigned int			cfg_collapsible_chgr_support;
 	unsigned int			cfg_warm_bat_mv;
 	unsigned int			cfg_cool_bat_mv;
 	unsigned int			cfg_hot_batt_p;
@@ -432,6 +445,8 @@ struct qpnp_lbc_chip {
 	int				usb_psy_ma;
 	int				delta_vddmax_uv;
 	int				init_trim_uv;
+	struct delayed_work		collapsible_detection_work;
+
 	struct alarm			vddtrim_alarm;
 	struct work_struct		vddtrim_work;
 	struct qpnp_lbc_irq		irqs[MAX_IRQS];
@@ -502,15 +517,27 @@ unsigned int usb_current_max_enabled = 0;
 
 #ifdef CONFIG_LGE_PM_PSEUDO_BATTERY
 extern struct pseudo_batt_info_type pseudo_batt_info;
-#ifdef CONFIG_LGE_PM_PSEUDO_BATTERY_CHARGING_MAX
+#if defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) \
+	|| defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA) \
+	|| defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA)
+#define PSEUDO_BATT_MAX 900
+#else
+#ifdef CONFIG_MACH_MSM8939_P1BSSN_SKT_KR
 #define PSEUDO_BATT_MAX 810
 #else
 #define PSEUDO_BATT_MAX 720
 #endif
 #endif
+#endif
 
 #ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+#if defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) \
+	|| defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA) \
+	|| defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA)
+#define USB_CURRENT_MAX 900
+#else
 #define USB_CURRENT_MAX 810
+#endif
 #endif
 
 
@@ -795,9 +822,18 @@ static u8 qpnp_lbc_get_trim_val(struct qpnp_lbc_chip *chip)
 					return vddtrim_map[i + 1].trim_val;
 			}
 		}
+#ifdef CONFIG_LGE_PM
+/*It can be modified by Official CR 815685 later*/
+		i = 0;
+#endif
 		break;
 	case 1:
+#ifdef CONFIG_LGE_PM
+/*It can be modified by Official CR 815685 later*/
+		for (i = TRIM_CENTER; i < ARRAY_SIZE(vddtrim_map); i++) {
+#else
 		for (i = TRIM_CENTER; i <= 7; i++) {
+#endif
 			if (vddtrim_map[i].trim_uv < chip->delta_vddmax_uv) {
 				delta_uv = AVG(vddtrim_map[i].trim_uv,
 						vddtrim_map[i - 1].trim_uv);
@@ -807,6 +843,10 @@ static u8 qpnp_lbc_get_trim_val(struct qpnp_lbc_chip *chip)
 					return vddtrim_map[i].trim_val;
 			}
 		}
+#ifdef CONFIG_LGE_PM
+/*It can be modified by Official CR 815685 later*/
+		i = ARRAY_SIZE(vddtrim_map)-1;
+#endif
 		break;
 	}
 
@@ -842,6 +882,25 @@ bool external_qpnp_lbc_is_usb_chg_plugged_in(void)
 static bool is_factory_cable(void);
 static int qpnp_lbc_is_batt_present(struct qpnp_lbc_chip *chip);
 #endif
+
+static int qpnp_lbc_is_chg_gone(struct qpnp_lbc_chip *chip)
+{
+	u8 rt_sts;
+	int rc;
+
+	rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + INT_RT_STS_REG,
+			&rt_sts, 1);
+	if (rc) {
+		pr_err("spmi read failed: addr=0x%04x, rc=%d\n",
+				chip->usb_chgpth_base + INT_RT_STS_REG, rc);
+		return rc;
+	}
+
+	pr_debug("rt_sts 0x%x\n", rt_sts);
+
+	return (rt_sts & CHG_GONE_BIT) ? 1 : 0;
+}
+
 static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 					int enable)
 {
@@ -957,6 +1016,67 @@ static int qpnp_lbc_bat_if_configure_btc(struct qpnp_lbc_chip *chip)
 		pr_err("Failed to configure BTC rc=%d\n", rc);
 
 	return rc;
+}
+
+static int qpnp_chg_collapsible_chgr_config(struct qpnp_lbc_chip *chip,
+               bool enable)
+{
+	u8 reg_val;
+	int rc;
+
+	pr_debug("Configure for %scollapsible charger\n",
+			enable ? "" : "non-");
+
+	if (enable) {
+		/* Override USBIN_LLIMIT_OK */
+		reg_val = USBIN_LLIMIT_OK_OVERRIDE_1;
+		rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+				chip->usb_chgpth_base,
+				USB_COMP_OVR1_REG,
+				USBIN_LLIMIT_OK_MASK, reg_val);
+		if (rc) {
+			pr_err("Failed to override USB_LLIMIT_OK rc = %d\n",
+					rc);
+			return rc;
+		}
+	}
+	/* Override VIN_MIN comparator */
+	rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+			chip->chgr_base, CHG_TEST_LOOP_REG,
+			VIN_MIN_LOOP_DISABLE_BIT,
+			enable ? VIN_MIN_LOOP_DISABLE_BIT : 0);
+	if (rc) {
+		pr_err("Failed to %s VIN_MIN comparator rc = %d\n",
+				enable ? "disable" : "enable", rc);
+		return rc;
+	}
+
+	if (!enable) {
+		/* Override USBIN_LLIMIT_OK */
+		reg_val = USBIN_LLIMIT_OK_NO_OVERRIDE;
+		rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+				chip->usb_chgpth_base,
+				USB_COMP_OVR1_REG,
+				USBIN_LLIMIT_OK_MASK, reg_val);
+		if (rc) {
+			pr_err("Failed to override USB_LLIMIT_OK rc = %d\n",
+					rc);
+			return rc;
+		}
+	}
+
+	/* Override CHG_GONE comparator */
+	reg_val = enable ? CHG_GONE_OK_EN_BIT : 0;
+
+	rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+			chip->usb_chgpth_base, USB_OVP_TST5_REG,
+			CHG_GONE_OK_EN_BIT, reg_val);
+	if (rc) {
+		pr_err("Failed to write CHG_GONE comparator rc = %d\n", rc);
+		return rc;
+	}
+
+	return 0;
 }
 
 #define QPNP_LBC_VBATWEAK_MIN_UV        3000000
@@ -1217,7 +1337,7 @@ static int qpnp_lbc_ibatmax_set(struct qpnp_lbc_chip *chip, int chg_current)
 	if (is_factory_cable()) {
 		if (is_factory_cable_130k()) {
 			pr_info("factory cable detected(130k) iBat 500mA\n");
-#if defined (CONFIG_MACH_MSM8916_C70W_KR) || defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
+#if defined (CONFIG_MACH_MSM8916_YG_SKT_KR)
 			chg_current = INPUT_CURRENT_LIMIT_USB30;
 #else
 			chg_current = INPUT_CURRENT_LIMIT_USB20;
@@ -1231,15 +1351,21 @@ static int qpnp_lbc_ibatmax_set(struct qpnp_lbc_chip *chip, int chg_current)
 
 #ifdef CONFIG_LGE_PM_PSEUDO_BATTERY
 		if((pseudo_batt_info.mode == 1)&&(!is_factory_cable())){
-			pr_info("Battery Fake Mode set charging current to %d(mA)\n", PSEUDO_BATT_MAX);
-			chg_current = PSEUDO_BATT_MAX;
+			if (chip->usb_present && chg_current > QPNP_CHG_I_MAX_MIN_90) {
+				pr_info("Battery Fake Mode set charging current to %d(mA)\n", PSEUDO_BATT_MAX);
+				chg_current = PSEUDO_BATT_MAX;
+				chip->usb_psy_ma = chg_current;
+			}
 		}
 #endif
 
 #ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
 		if(usb_current_max_enabled){
-			pr_info("USB Current Max set charging current to %d(mA)\n", PSEUDO_BATT_MAX);
-			chg_current = USB_CURRENT_MAX;
+			if (chip->usb_present && chg_current > QPNP_CHG_I_MAX_MIN_90) {
+				pr_info("USB Current Max set charging current to %d(mA)\n", PSEUDO_BATT_MAX);
+				chg_current = USB_CURRENT_MAX;
+				chip->usb_psy_ma = chg_current;
+			}
 		}
 #endif
 
@@ -1738,9 +1864,9 @@ static int get_prop_capacity(struct qpnp_lbc_chip *chip)
 		if(start_chg_factory_testmode == true)
 		{
 			pr_err("factory_testmode charging enable\n");
-			soc = COMPLETE_CAPACITY;
+			soc = chip->cfg_soc_resume_limit;
 		#ifdef CONFIG_LGE_PM_BATTERY_RT9428_EOC_BY_SOC
-			scaled_soc = COMPLETE_CAPACITY;
+			scaled_soc = chip->cfg_soc_resume_limit;
 		#endif
 		}
 #endif
@@ -2063,11 +2189,6 @@ static void qpnp_batt_external_power_changed(struct power_supply *psy)
 		pr_info("thermal charging current_te to %d(mA)\n", chip->chg_current_te);
 #endif
 
-#ifdef CONFIG_LGE_PM_PSEUDO_BATTERY
-			if((pseudo_batt_info.mode == 1)&&(!is_factory_cable())){
-				current_ma = PSEUDO_BATT_MAX;
-			}
-#endif
 		/* Disable charger in case of reset or suspend event */
 		if (current_ma <= 2 && !chip->cfg_use_fake_battery
 				&& get_prop_batt_present(chip)) {
@@ -2879,7 +3000,8 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 			chip->spmi->dev.of_node, "qcom,btc-disabled");
 
 	/* Get the charging-disabled property */
-#ifdef CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM
+#if defined (CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined (CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined (CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 	chip->cfg_charging_disabled = 0;
 #else
 	chip->cfg_charging_disabled =
@@ -2910,6 +3032,11 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 	chip->cfg_chgr_led_support =
 			of_property_read_bool(chip->spmi->dev.of_node,
 					"qcom,chgr-led-support");
+
+	/* Get the collapsible charger support property */
+	chip->cfg_collapsible_chgr_support =
+			of_property_read_bool(chip->spmi->dev.of_node,
+					"qcom,collapsible-chgr-support");
 
 	/* Disable charging when faking battery values */
 	if (chip->cfg_use_fake_battery)
@@ -2943,6 +3070,28 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 	}
 #endif
 	return rc;
+}
+
+static irqreturn_t qpnp_lbc_chg_gone_irq_handler(int irq, void *_chip)
+{
+	struct qpnp_lbc_chip *chip = _chip;
+	int chg_gone;
+
+	chg_gone = qpnp_lbc_is_chg_gone(chip);
+	pr_debug("chg-gone triggered, rt_sts: %d\n", chg_gone);
+
+	if (chip->cfg_collapsible_chgr_support && chg_gone) {
+		pr_debug("disable charger to prevent fastchg irq storming" \
+				"if a non-collapsible charger being used\n");
+		qpnp_lbc_charger_enable(chip, COLLAPSE, 0);
+		qpnp_lbc_disable_irq(chip, &chip->irqs[USBIN_VALID]);
+		qpnp_lbc_disable_irq(chip, &chip->irqs[USB_CHG_GONE]);
+		qpnp_chg_collapsible_chgr_config(chip, 0);
+		schedule_delayed_work(&chip->collapsible_detection_work,
+				msecs_to_jiffies(300));
+	}
+
+	return IRQ_HANDLED;
 }
 
 static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
@@ -3013,6 +3162,8 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			qpnp_lbc_set_appropriate_current(chip);
 			spin_unlock_irqrestore(&chip->ibat_change_lock,
 								flags);
+			if (chip->cfg_collapsible_chgr_support)
+				chip->non_collapsible_chgr_detected = false;
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
 			pr_info("USB OUT chg wake lock = %d\n", wake_lock_active(&chip->chg_wake_lock));
 			if (wake_lock_active(&chip->chg_wake_lock)) {
@@ -3034,6 +3185,16 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			if (!chip->cfg_disable_vbatdet_based_recharge)
 				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
 
+			/*
+			 * If collapsible charger supported, enable chgr_gone
+			 * irq, and configure for collapsible charger.
+			 */
+			if (chip->cfg_collapsible_chgr_support &&
+					!chip->non_collapsible_chgr_detected) {
+				qpnp_lbc_enable_irq(chip,
+						&chip->irqs[USB_CHG_GONE]);
+				qpnp_chg_collapsible_chgr_config(chip, 1);
+			}
 			/*
 			 * Enable SOC based charging to make sure
 			 * charging gets enabled on USB insertion
@@ -3359,6 +3520,9 @@ static int qpnp_lbc_request_irqs(struct qpnp_lbc_chip *chip)
 	SPMI_REQUEST_IRQ(chip, USBIN_VALID, rc, usbin_valid, 0,
 			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, 1);
 
+	SPMI_REQUEST_IRQ(chip, USB_CHG_GONE, rc, chg_gone, 0,
+			IRQF_TRIGGER_RISING, 1);
+
 	SPMI_REQUEST_IRQ(chip, USB_OVER_TEMP, rc, usb_overtemp, 0,
 			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, 0);
 
@@ -3394,6 +3558,8 @@ static int qpnp_lbc_get_irqs(struct qpnp_lbc_chip *chip, u8 subtype,
 						USBIN_VALID, usbin-valid);
 		SPMI_GET_IRQ_RESOURCE(chip, rc, spmi_resource,
 						USB_OVER_TEMP, usb-over-temp);
+		SPMI_GET_IRQ_RESOURCE(chip, rc, spmi_resource,
+						USB_CHG_GONE, chg-gone);
 		break;
 	};
 
@@ -3556,8 +3722,15 @@ static void determine_initial_status(struct qpnp_lbc_chip *chip)
 	 * Set USB psy online to avoid userspace from shutting down if battery
 	 * capacity is at zero and no chargers online.
 	 */
-	if (chip->usb_present)
+	if (chip->usb_present) {
+		if (chip->cfg_collapsible_chgr_support &&
+				!chip->non_collapsible_chgr_detected) {
+			qpnp_lbc_enable_irq(chip,
+					&chip->irqs[USB_CHG_GONE]);
+			qpnp_chg_collapsible_chgr_config(chip, 1);
+		}
 		power_supply_set_online(chip->usb_psy, 1);
+	}
 }
 
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
@@ -3836,6 +4009,25 @@ void qpnp_pwr_key_action_set_for_chg_logo(struct input_dev *dev, unsigned int co
 EXPORT_SYMBOL(qpnp_pwr_key_action_set_for_chg_logo);
 #endif
 
+static void qpnp_lbc_collapsible_detection_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct qpnp_lbc_chip *chip = container_of(dwork,
+			struct qpnp_lbc_chip,
+			collapsible_detection_work);
+
+	if (qpnp_lbc_is_usb_chg_plugged_in(chip)) {
+		chip->non_collapsible_chgr_detected = true;
+		pr_debug("Non-collapsible charger detected\n");
+	} else {
+		chip->non_collapsible_chgr_detected = false;
+		pr_debug("Charger removal detected\n");
+	}
+	pr_debug("enable charger: COLLAPSE\n");
+	qpnp_lbc_charger_enable(chip, COLLAPSE, 1);
+	qpnp_lbc_enable_irq(chip, &chip->irqs[USBIN_VALID]);
+}
+
 #define IBAT_TRIM			-300
 static void qpnp_lbc_vddtrim_work_fn(struct work_struct *work)
 {
@@ -3909,7 +4101,7 @@ static enum alarmtimer_restart vddtrim_callback(struct alarm *alarm,
 	return ALARMTIMER_NORESTART;
 }
 #ifdef CONFIG_MACH_MSM8916_YG_SKT_KR
-#define QPNP_DEFAULT_IBAT	1000
+#define QPNP_DEFAULT_IBAT	900
 #else
 #define QPNP_DEFAULT_IBAT	810
 #endif
@@ -3953,6 +4145,8 @@ static int qpnp_lbc_probe(struct spmi_device *spmi)
 	spin_lock_init(&chip->irq_lock);
 	INIT_WORK(&chip->vddtrim_work, qpnp_lbc_vddtrim_work_fn);
 	alarm_init(&chip->vddtrim_alarm, ALARM_REALTIME, vddtrim_callback);
+	INIT_DELAYED_WORK(&chip->collapsible_detection_work,
+			qpnp_lbc_collapsible_detection_work);
 #ifdef CONFIG_LGE_PM
 	spin_lock_init(&chip->chg_set_lock);
 #endif
@@ -4070,6 +4264,10 @@ static int qpnp_lbc_probe(struct spmi_device *spmi)
 			return rc;
 		}
 	}
+
+#ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
+	wake_lock_init(&chip->chg_wake_lock, WAKE_LOCK_SUSPEND, "qpnp_lbc_chg");
+#endif
 
 	if (chip->bat_if_base) {
 		chip->batt_present = qpnp_lbc_is_batt_present(chip);
@@ -4214,8 +4412,6 @@ static int qpnp_lbc_probe(struct spmi_device *spmi)
 	wake_lock_init(&chip->lcs_wake_lock,
 		WAKE_LOCK_SUSPEND, "LGE charging scenario");
 
-	wake_lock_init(&chip->chg_wake_lock, WAKE_LOCK_SUSPEND, "qpnp_lbc_chg");
-
 	INIT_DELAYED_WORK(&chip->battemp_work, qpnp_lbc_monitor_batt_temp);
 	schedule_delayed_work(&chip->battemp_work,
 		MONITOR_BATTEMP_POLLING_PERIOD / 12);
@@ -4264,6 +4460,7 @@ static int qpnp_lbc_remove(struct spmi_device *spmi)
 		alarm_cancel(&chip->vddtrim_alarm);
 		cancel_work_sync(&chip->vddtrim_work);
 	}
+	cancel_delayed_work_sync(&chip->collapsible_detection_work);
 	if (chip->bat_if_base)
 		power_supply_unregister(&chip->batt_psy);
 	mutex_destroy(&chip->jeita_configure_lock);

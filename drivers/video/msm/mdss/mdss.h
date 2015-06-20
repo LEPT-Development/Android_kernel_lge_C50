@@ -255,6 +255,8 @@ struct mdss_data_type {
 	ulong weight;
 	ulong bucket;
 	ulong skip_count;
+	int skip_ratio;
+	bool skip_first;
 #endif
 	bool traffic_shaper_en;
 	int iommu_ref_cnt;

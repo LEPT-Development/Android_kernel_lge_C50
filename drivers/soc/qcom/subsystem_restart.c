@@ -43,6 +43,7 @@
 
 #ifdef CONFIG_LGE_HANDLE_PANIC
 #include <soc/qcom/lge/lge_handle_panic.h>
+extern void modem_set_ignore_errors(struct subsys_desc *subsys);
 #endif
 
 #define DISABLE_SSR 0x9889deed
@@ -961,6 +962,7 @@ int subsys_modem_restart(void)
 
 	rsl = dev->restart_level;
 	dev->restart_level = RESET_SUBSYS_COUPLED;
+	modem_set_ignore_errors(dev->desc);
 	subsys_set_crash_status(dev, true);
 	ret = subsystem_restart_dev(dev);
 	dev->restart_level = rsl;

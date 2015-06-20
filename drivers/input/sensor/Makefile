@@ -40,6 +40,8 @@ obj-$(CONFIG_SENSORS_K303C)			+= k303c_acc.o k303c_mag.o
 # Makefile for Bosch sensor driver.
 #
 obj-$(CONFIG_SENSORS_BMI160)    += bmi160_driver.o bmi160.o
+		EXTRA_CFLAGS += -DBMI160_CALIBRATION
+		EXTRA_CFLAGS += -DBMI_CAL_MSG_UEVENT
 ifeq ($(CONFIG_BMI160_MAG_INTERFACE_SUPPORT),y)
 		EXTRA_CFLAGS += -DBMI160_MAG_INTERFACE_SUPPORT
 endif

@@ -1,7 +1,9 @@
 #ifndef __ASM_ARCH_MSM_BOARD_LGE_H
 #define __ASM_ARCH_MSM_BOARD_LGE_H
 
-#if defined(CONFIG_MACH_MSM8916_E7IILTE_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM)
+#if defined(CONFIG_MACH_MSM8916_E7IILTE_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 
 typedef enum {
 	HW_REV_0 = 0,
@@ -121,6 +123,7 @@ int lge_get_android_dlcomplete(void);
 #endif
 #if defined(CONFIG_PRE_SELF_DIAGNOSIS)
 int lge_pre_self_diagnosis(char *drv_bus_code, int func_code, char *dev_code, char *drv_code, int errno);
+int lge_pre_self_diagnosis_pass(char *dev_code);
 #endif
 
 #if defined(CONFIG_LCD_KCAL)
@@ -236,11 +239,6 @@ enum lge_boot_mode_type {
 
 #ifdef CONFIG_USB_G_LGE_ANDROID
 void __init lge_add_android_usb_devices(void);
-#endif
-
-#if defined(CONFIG_LGE_KSWITCH)
-#define LGE_KSWITCH_UART_DISABLE     0x1 << 3
-int lge_get_kswitch_status(void);
 #endif
 
 #ifdef CONFIG_LGE_LCD_OFF_DIMMING

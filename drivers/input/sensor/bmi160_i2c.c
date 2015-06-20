@@ -41,71 +41,39 @@ static struct i2c_client *bmi_client;
 /*	i2c read routine for API*/
 static s8 bmi_i2c_read(struct i2c_client *client, u8 reg_addr,
 			u8 *data, u8 len)
-	{
-#if !defined BMI_USE_BASIC_I2C_FUNC
-		s32 dummy;
-		if (NULL == client)
-			return -EINVAL;
+{
+	int retry;
 
-		while (0 != len--) {
-#ifdef BMI_SMBUS
-			dummy = i2c_smbus_read_byte_data(client, reg_addr);
-			if (dummy < 0) {
-				dev_err(&client->dev, "i2c smbus read error");
-				return -EIO;
-			}
-			*data = (u8)(dummy & 0xff);
-#else
-			dummy = i2c_master_send(client, (char *)&reg_addr, 1);
-			if (dummy < 0) {
-				dev_err(&client->dev, "i2c bus master write error");
-				return -EIO;
-			}
+	struct i2c_msg msg[] = {
+		{
+		 .addr = client->addr,
+		 .flags = 0,
+		 .len = 1,
+		 .buf = &reg_addr,
+		},
 
-			dummy = i2c_master_recv(client, (char *)data, 1);
-			if (dummy < 0) {
-				dev_err(&client->dev, "i2c bus master read error");
-				return -EIO;
-			}
-#endif
-			reg_addr++;
-			data++;
-		}
-		return 0;
-#else
-		int retry;
+		{
+		 .addr = client->addr,
+		 .flags = I2C_M_RD,
+		 .len = len,
+		 .buf = data,
+		 },
+	};
 
-		struct i2c_msg msg[] = {
-			{
-			 .addr = client->addr,
-			 .flags = 0,
-			 .len = 1,
-			 .buf = &reg_addr,
-			},
+	for (retry = 0; retry < BMI_MAX_RETRY_I2C_XFER; retry++) {
+		if (i2c_transfer(client->adapter, msg,
+					ARRAY_SIZE(msg)) > 0)
+			break;
+		else
+			mdelay(BMI_I2C_WRITE_DELAY_TIME);
+	}
 
-			{
-			 .addr = client->addr,
-			 .flags = I2C_M_RD,
-			 .len = len,
-			 .buf = data,
-			 },
-		};
+	if (BMI_MAX_RETRY_I2C_XFER <= retry) {
+		dev_err(&client->dev, "I2C xfer error");
+		return -EIO;
+	}
 
-		for (retry = 0; retry < BMI_MAX_RETRY_I2C_XFER; retry++) {
-			if (i2c_transfer(client->adapter, msg,
-						ARRAY_SIZE(msg)) > 0)
-				break;
-			else
-				mdelay(BMI_I2C_WRITE_DELAY_TIME);
-		}
-
-		if (BMI_MAX_RETRY_I2C_XFER <= retry) {
-			dev_err(&client->dev, "I2C xfer error");
-			return -EIO;
-		}
-
-		return 0;
-#endif
+	return 0;
 	}
 
 
@@ -150,35 +118,6 @@ static s8 bmi_i2c_burst_read(struct i2c_client *client, u8 reg_addr,
 static s8 bmi_i2c_write(struct i2c_client *client, u8 reg_addr,
 		u8 *data, u8 len)
 {
-#if !defined BMI_USE_BASIC_I2C_FUNC
-	s32 dummy;
-
-#ifndef BMI_SMBUS
-	u8 buffer[2];
-#endif
-
-	if (NULL == client)
-		return -EPERM;
-
-	while (0 != len--) {
-#ifdef BMI_SMBUS
-		dummy = i2c_smbus_write_byte_data(client, reg_addr, *data);
-#else
-		buffer[0] = reg_addr;
-		buffer[1] = *data;
-		dummy = i2c_master_send(client, (char *)buffer, 2);
-#endif
-		reg_addr++;
-		data++;
-		if (dummy < 0) {
-			dev_err(&client->dev, "error writing i2c bus");
-			return -EPERM;
-		}
-
-	}
-	mdelay(2);
-	return 0;
-#else
 	u8 buffer[2];
 	int retry;
 	struct i2c_msg msg[] = {
@@ -211,7 +150,6 @@ static s8 bmi_i2c_write(struct i2c_client *client, u8 reg_addr,
 
 	mdelay(2);
 	return 0;
-#endif
 }
 
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,6 +31,10 @@
 
 #ifdef CONFIG_MFD_DW8768
 #include <linux/mfd/dw8768.h>
+#endif
+
+#if defined(CONFIG_TOUCHSCREEN_UNIFIED_DRIVER_3)
+#include <linux/input/unified_driver_3/lgtp_common_notify.h>
 #endif
 
 #define XO_CLK_RATE	19200000
@@ -671,7 +675,6 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	mutex_lock(&ctrl_pdata->mutex);
 	panel_info = &ctrl_pdata->panel_data.panel_info;
 
 	pr_debug("%s+: ctrl=%p ndx=%d power_state=%d\n",
@@ -714,7 +717,6 @@ panel_power_ctrl:
 		panel_info->mipi.frame_rate = panel_info->new_fps;
 
 end:
-	mutex_unlock(&ctrl_pdata->mutex);
 	pr_debug("%s-:\n", __func__);
 
 	return ret;
@@ -795,11 +797,27 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	ctrl_pdata->byte_clk_rate = ctrl_pdata->panel_data.panel_info.clk_rate / 8;
 #endif
 	/*
-	 * Enable DSI clocks.
-	 * This is also enable the DSI core power block and reset/setup
-	 * DSI phy
+	 * Enable DSI bus clocks prior to resetting and initializing DSI
+	 * Phy. Phy and ctrl setup need to be done before enabling the link
+	 * clocks.
 	 */
-	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
+
+	/*
+	 * If ULPS during suspend feature is enabled, then DSI PHY was
+	 * left on during suspend. In this case, we do not need to reset/init
+	 * PHY. This would have already been done when the BUS clocks are
+	 * turned on. However, if cont splash is disabled, the first time DSI
+	 * is powered on, phy init needs to be done unconditionally.
+	 */
+	if (!pdata->panel_info.ulps_suspend_enabled || !ctrl_pdata->ulps) {
+		mdss_dsi_phy_sw_reset(ctrl_pdata);
+		mdss_dsi_phy_init(ctrl_pdata);
+		mdss_dsi_ctrl_setup(ctrl_pdata);
+	}
+
+	/* DSI link clocks need to be on prior to ctrl sw reset */
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_LINK_CLKS, 1);
 	mdss_dsi_sw_reset(ctrl_pdata, true);
 
 #if defined(CONFIG_JDI_INCELL_VIDEO_HD_PANEL) || defined(CONFIG_JDI_INCELL_VIDEO_FHD_PANEL)
@@ -1457,6 +1475,9 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 
 	switch (event) {
 	case MDSS_EVENT_LINK_READY:
+#if defined(CONFIG_TOUCHSCREEN_UNIFIED_DRIVER_3)
+		touch_notifier_call_chain(LCD_EVENT_TOUCH_LPWG_OFF, NULL);
+#endif
 		rc = mdss_dsi_on(pdata);
 #ifdef CONFIG_LGE_STANDARD_USB_A_ALTEV2_NOTIFY
 		notify_lcd_state_to_usb(1);
@@ -1465,6 +1486,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 							pdata);
 		break;
 	case MDSS_EVENT_UNBLANK:
+		mdss_dsi_get_hw_revision(ctrl_pdata);
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_unblank(pdata);
 #if defined (CONFIG_LGD_INCELL_PHASE3_VIDEO_HD_PT_PANEL)
@@ -1479,6 +1501,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->ctrl_state |= CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->on_cmds.link_state == DSI_HS_MODE)
 			rc = mdss_dsi_unblank(pdata);
+		pdata->panel_info.esd_rdy = true;
 		break;
 	case MDSS_EVENT_BLANK:
 		power_state = (int) (unsigned long) arg;
@@ -1487,10 +1510,16 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_PANEL_OFF:
 		power_state = (int) (unsigned long) arg;
+		pdata->panel_info.esd_rdy = false;
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_blank(pdata, power_state);
 		rc = mdss_dsi_off(pdata, power_state);
+
+#if defined(CONFIG_TOUCHSCREEN_UNIFIED_DRIVER_3)
+		touch_notifier_call_chain(LCD_EVENT_TOUCH_LPWG_ON, NULL);
+#endif
+
 #ifdef CONFIG_LGE_STANDARD_USB_A_ALTEV2_NOTIFY
 		notify_lcd_state_to_usb(0);
 #endif
@@ -1534,9 +1563,6 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_REGISTER_RECOVERY_HANDLER:
 		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
 			(struct mdss_intf_recovery *)arg);
-		break;
-	case MDSS_EVENT_INTF_RESTORE:
-		mdss_dsi_ctrl_phy_restore(ctrl_pdata);
 		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);

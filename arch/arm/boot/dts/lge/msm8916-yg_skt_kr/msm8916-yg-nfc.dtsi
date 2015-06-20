@@ -14,6 +14,7 @@
     i2c@78ba000 {
             pn547@28 {
             compatible = "nxp,pn547";
+            status = "ok";
             reg = <0x28>;
             interrupt-parent = <&msm_gpio>;
             interrupts = <21 0x2>;

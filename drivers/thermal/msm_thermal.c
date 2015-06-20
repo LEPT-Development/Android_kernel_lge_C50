@@ -39,6 +39,7 @@
 #include <linux/msm_thermal_ioctl.h>
 #include <soc/qcom/rpm-smd.h>
 #include <soc/qcom/scm.h>
+#include <linux/sched/rt.h>
 
 #define CREATE_TRACE_POINTS
 #define TRACE_MSM_THERMAL
@@ -1983,12 +1984,14 @@ static __ref int do_hotplug(void *data)
 {
 	int ret = 0;
 	uint32_t cpu = 0, mask = 0;
+	struct sched_param param = {.sched_priority = MAX_RT_PRIO-2};
 
 	if (!core_control_enabled) {
 		pr_debug("Core control disabled\n");
 		return -EINVAL;
 	}
 
+	sched_setscheduler(current, SCHED_FIFO, &param);
 	while (!kthread_should_stop()) {
 		while (wait_for_completion_interruptible(
 			&hotplug_notify_complete) != 0)
@@ -2562,18 +2565,30 @@ static __ref int do_freq_mitigation(void *data)
 {
 	int ret = 0;
 	uint32_t cpu = 0, max_freq_req = 0, min_freq_req = 0;
+	struct sched_param param = {.sched_priority = MAX_RT_PRIO-1};
 
+	sched_setscheduler(current, SCHED_FIFO, &param);
 	while (!kthread_should_stop()) {
 		while (wait_for_completion_interruptible(
 			&freq_mitigation_complete) != 0)
 			;
 		INIT_COMPLETION(freq_mitigation_complete);
 
-		get_online_cpus();
 		for_each_possible_cpu(cpu) {
+#ifdef CONFIG_LGE_PM_THERMAL_LITTLE_FREQ
+			if ((cpu >=4)&&(cpu<=7))
+				max_freq_req = (cpus[cpu].max_freq) ?
+						msm_thermal_info.little_freq_limit :
+						UINT_MAX;
+			else
+				max_freq_req = (cpus[cpu].max_freq) ?
+						msm_thermal_info.freq_limit :
+						UINT_MAX;
+#else
 			max_freq_req = (cpus[cpu].max_freq) ?
 					msm_thermal_info.freq_limit :
 					UINT_MAX;
+#endif
 			max_freq_req = min(max_freq_req,
 					cpus[cpu].user_max_freq);
 
@@ -2599,7 +2614,6 @@ reset_threshold:
 			}
 		}
 		update_cluster_freq();
-		put_online_cpus();
 	}
 	return ret;
 }
@@ -2619,10 +2633,20 @@ static int freq_mitigation_notify(enum thermal_trip_type type,
 	switch (type) {
 	case THERMAL_TRIP_CONFIGURABLE_HI:
 		if (!cpu_node->max_freq) {
+#ifdef CONFIG_LGE_PM_THERMAL_LITTLE_FREQ
+			if((cpu_node->cpu >= 4)&&(cpu_node->cpu <= 7))
+				pr_info("Mitigating CPU%d frequency to %d\n",
+					cpu_node->cpu,
+					msm_thermal_info.little_freq_limit);
+			else
+				pr_info("Mitigating CPU%d frequency to %d\n",
+					cpu_node->cpu,
+					msm_thermal_info.freq_limit);
+#else
 			pr_info("Mitigating CPU%d frequency to %d\n",
 				cpu_node->cpu,
 				msm_thermal_info.freq_limit);
-
+#endif
 			cpu_node->max_freq = true;
 		}
 		break;
@@ -5102,6 +5126,13 @@ static int probe_freq_mitigation(struct device_node *node,
 	ret = of_property_read_u32(node, key, &data->freq_limit);
 	if (ret)
 		goto PROBE_FREQ_EXIT;
+
+#ifdef CONFIG_LGE_PM_THERMAL_LITTLE_FREQ
+	key = "qcom,little-freq-mitigation-value";
+	ret = of_property_read_u32(node, key, &data->little_freq_limit);
+	if (ret)
+		goto PROBE_FREQ_EXIT;
+#endif
 
 	key = "qcom,freq-mitigation-control-mask";
 	ret = of_property_read_u32(node, key, &data->freq_mitig_control_mask);

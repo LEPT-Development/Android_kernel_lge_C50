@@ -49,10 +49,6 @@ void __init lge_add_qfprom_devices(void)
 static bool cable_type_defined;
 static struct chg_cable_info_table pm8941_acc_cable_type_data[MAX_CABLE_NUM];
 
-#ifdef CONFIG_LGE_KSWITCH
-static int s_kswitch_flag;
-#endif
-
 static int cn_arr_len = 3;
 struct cn_prop {
 	char *name;
@@ -363,7 +359,9 @@ int lge_get_android_dlcomplete(void)
 static hw_rev_type lge_bd_rev = HW_REV_A;
 
 /* CAUTION: These strings are come from LK. */
-#if defined(CONFIG_MACH_MSM8916_E7IILTE_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+#if defined(CONFIG_MACH_MSM8916_E7IILTE_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 char *rev_str[] = {"rev_0", "rev_a", "rev_b", "rev_c", "rev_d",
 	"rev_e", "rev_10", "rev_11","reserved"};
 #elif defined (CONFIG_MACH_MSM8916_C70N_CRK_US) || defined (CONFIG_MACH_MSM8916_C70N_TMO_US) || \
@@ -491,11 +489,7 @@ bool is_lge_battery_valid(void)
 
 int read_lge_battery_id(void)
 {
-#if defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
-		return 1;
-#else
 		return lge_battery_info;
-#endif
 }
 //EXPORT_SYMBOL(read_lge_battery_id);
 
@@ -691,6 +685,28 @@ static int __init lge_laf_mode_init(char *s)
 }
 __setup("androidboot.laf=", lge_laf_mode_init);
 
+unsigned int touch_module;
+EXPORT_SYMBOL(touch_module);
+
+static int __init touch_module_check(char *touch)
+{
+	if(!strncmp(touch,"PRIMARY_MODULE", 14)) {
+		touch_module = 0;
+		printk("touch_module 0\n");
+	} else if(!strncmp(touch, "SECONDARY_MODULE", 16)) {
+		touch_module = 1;
+		printk("touch_module 1\n");
+	} else if(!strncmp(touch, "TERITARY_MODULE", 15)) {
+		touch_module = 2;
+	} else if(!strncmp(touch, "QUATENARY_MODULE", 16)) {
+		touch_module = 3;
+	}
+	
+	printk("[TOUCH] kernel touch module check : %s\n", touch);
+	return 0;
+}
+__setup("lge.touchModule=", touch_module_check);
+
 enum lge_laf_mode_type lge_get_laf_mode(void)
 {
 	return lge_laf_mode;
@@ -750,48 +766,3 @@ void __init lge_add_android_usb_devices(void)
 }
 
 #endif
-#ifdef CONFIG_LGE_KSWITCH
-static
-int atoi(const char* str)
-{
-	int val = 0;
-
-	if (str == NULL)
-	{
-		printk(KERN_CRIT "[KSwitch] kill switch flag string pointer is NULL\n");
-		return -1;
-	}
-
-	for (;;str++)
-	{
-		switch (*str)
-		{
-			case '0' ... '9':
-				val = 10*val + (*str - '0');
-				break;
-			default:
-				return val;
-		}
-	}
-}
-
-static
-int __init kswitch_setup(char* value)
-{
-	s_kswitch_flag = atoi(value);
-
-	if (s_kswitch_flag < 0)
-	{
-		printk(KERN_CRIT "[KSwitch] malformed kswitch flag value is used to setup: 0x%x\n", s_kswitch_flag);
-		s_kswitch_flag = 0;
-	}
-
-	return 1;
-}
-__setup("kswitch=", kswitch_setup);
-
-int  lge_get_kswitch_status()
-{
-	return s_kswitch_flag;
-}
-#endif/*                    */

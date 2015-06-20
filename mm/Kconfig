@@ -540,3 +540,13 @@ config BALANCE_ANON_FILE_RECLAIM
 
 config GENERIC_EARLY_IOREMAP
 	bool
+
+config LGE_MMAP_READAHEAD_128K
+	bool "Change MMAP readahead size as 128K"
+	default n
+	help
+	  Change MMAP readahead size as 128KB (32 page * page size).
+	  When available memory is low, mmap allocation reproduces page fault.
+	  In this case, system is slow and some application is not reapond because
+	  big I/O wait. so we change MMAP readahead size as 128KB.
+

@@ -142,6 +142,13 @@
 #define KNOCKON_DELAY			68	/* 700ms */
 #define KNOCKCODE_DELAY			25  /* 250ms */
 
+#if defined(ENABLE_NOISE_LOG)
+#define IM_LSB			(ts->analog_fc.dsc.data_base + 4)
+#define IM_MSB			(ts->analog_fc.dsc.data_base + 5)
+#define CURR_NOISE_STATE	(ts->analog_fc.dsc.data_base + 8)
+#define CID_IM			(ts->analog_fc.dsc.data_base + 10)
+#define FREQ_SCAN_IM		(ts->analog_fc.dsc.data_base + 11)
+#endif
 
 /****************************************************************************
  * Macros
@@ -207,6 +214,10 @@ int enable_rmi_dev = 0;
 int get_swipe_mode = 1;
 int wakeup_by_swipe = 0;
 extern int lockscreen_stat;
+#endif
+#if defined(ENABLE_NOISE_LOG)
+static unsigned long cnt = 0, im_sum=0, cns_sum=0, cid_im_sum=0, freq_scan_im_sum=0, prev_count=0;
+static u16 im_aver=0, cns_aver=0, cid_im_aver=0, freq_scan_im_aver=0;
 #endif
 
 /****************************************************************************
@@ -1099,6 +1110,81 @@ static ssize_t store_swipe_mode(struct i2c_client *client,
 }
 #endif
 
+#if defined(ENABLE_NOISE_LOG)
+static ssize_t show_ts_noise(struct i2c_client *client, char *buf)
+{
+	int ret = 0;
+
+	ret += sprintf(buf+ret, "Test Count : %lu\n", cnt);
+	ret += sprintf(buf+ret, "Current Noise State : %d\n", cns_aver);
+	ret += sprintf(buf+ret, "Interference Metric : %d\n", im_aver);
+	ret += sprintf(buf+ret, "CID IM : %d\n", cid_im_aver);
+	ret += sprintf(buf+ret, "Freq Scan IM : %d\n", freq_scan_im_aver);
+
+	TOUCH_LOG("Aver: CNS[%5d]   IM[%5d]   CID_IM[%5d]    FREQ_SCAN_IM[%5d] (cnt:%lu)\n",
+		cns_aver, im_aver, cid_im_aver, freq_scan_im_aver, cnt);
+
+	return ret;
+}
+
+static ssize_t store_ts_noise(struct i2c_client *client, const char *buf, size_t count)
+{
+	int value;
+
+	sscanf(buf, "%d", &value);
+
+	if ((ts->noiseState.check_noise_menu == MENU_OUT) && (value == MENU_ENTER)) {
+		ts->noiseState.check_noise_menu = MENU_ENTER;
+	} else if ((ts->noiseState.check_noise_menu == MENU_ENTER) && (value == MENU_OUT)) {
+		ts->noiseState.check_noise_menu = MENU_OUT;
+	} else {
+		TOUCH_LOG("Already entered Check Noise menu .\n");
+		TOUCH_LOG("check_noise_menu:%d, value:%d \n",
+			ts->noiseState.check_noise_menu, value);
+		return count;
+	}
+
+	TOUCH_LOG("Check Noise = %s\n",
+		(ts->noiseState.check_noise_menu == MENU_OUT) ? "MENU_OUT" : "MENU_ENTER");
+
+	return count;
+}
+
+static ssize_t show_ts_noise_log_enable(struct i2c_client *client, char *buf)
+{
+	int ret = 0;
+
+	ret += sprintf(buf+ret, "%d\n", ts->noiseState.noise_log_flag);
+	TOUCH_LOG("ts noise log flag = %s\n",
+		(ts->noiseState.noise_log_flag == TS_NOISE_LOG_DISABLE) ? "TS_NOISE_LOG_DISABLE" : "TS_NOISE_LOG_ENABLE");
+
+	return ret;
+}
+
+static ssize_t store_ts_noise_log_enable(struct i2c_client *client, const char *buf, size_t count)
+{
+	int value;
+
+	sscanf(buf, "%d", &value);
+
+	if ((ts->noiseState.noise_log_flag == TS_NOISE_LOG_DISABLE) && (value == TS_NOISE_LOG_ENABLE)) {
+		ts->noiseState.noise_log_flag = TS_NOISE_LOG_ENABLE;
+	} else if ((ts->noiseState.noise_log_flag == TS_NOISE_LOG_ENABLE) && (value == TS_NOISE_LOG_DISABLE)) {
+		ts->noiseState.noise_log_flag = TS_NOISE_LOG_DISABLE;
+	} else {
+		TOUCH_LOG("Already Enable TS Noise Log.\n");
+		TOUCH_LOG("ts_noise_log_flag:%d, value:%d \n",
+			ts->noiseState.noise_log_flag, value);
+		return count;
+	}
+
+	TOUCH_LOG("ts noise log flag = %s\n",
+		(ts->noiseState.noise_log_flag == TS_NOISE_LOG_DISABLE) ? "TS_NOISE_LOG_DISABLE" : "TS_NOISE_LOG_ENABLE");
+
+	return count;
+}
+#endif
+
 static LGE_TOUCH_ATTR(tci, S_IRUGO | S_IWUSR, show_tci, store_tci);
 static LGE_TOUCH_ATTR(reg_ctrl, S_IRUGO | S_IWUSR, NULL, store_reg_ctrl);
 static LGE_TOUCH_ATTR(object_report, S_IRUGO | S_IWUSR, show_object_report, store_object_report);
@@ -1106,6 +1192,11 @@ static LGE_TOUCH_ATTR(enable_rmi_dev, S_IRUGO | S_IWUSR, show_use_rmi_dev, store
 #if defined(ENABLE_SWIPE_MODE)
 static LGE_TOUCH_ATTR(swipe_mode, S_IRUGO | S_IWUSR, show_swipe_mode, store_swipe_mode);
 #endif
+#if defined(ENABLE_NOISE_LOG)
+static LGE_TOUCH_ATTR(ts_noise, S_IRUGO | S_IWUSR, show_ts_noise, store_ts_noise);
+static LGE_TOUCH_ATTR(ts_noise_log_enable, S_IRUGO | S_IWUSR, show_ts_noise_log_enable, store_ts_noise_log_enable);
+#endif
+
 
 static struct attribute *S3320_attribute_list[] = {
 	&lge_touch_attr_tci.attr,
@@ -1114,6 +1205,10 @@ static struct attribute *S3320_attribute_list[] = {
 	&lge_touch_attr_enable_rmi_dev.attr,
 #if defined(ENABLE_SWIPE_MODE)
 	&lge_touch_attr_swipe_mode.attr,
+#endif
+#if defined(ENABLE_NOISE_LOG)
+	&lge_touch_attr_ts_noise.attr,
+	&lge_touch_attr_ts_noise_log_enable.attr,
 #endif
 	NULL,
 };
@@ -1241,6 +1336,68 @@ static int S3320_InitRegister(struct i2c_client *client)
 	
 }
 
+#if defined(ENABLE_NOISE_LOG)
+static int synaptics_ts_noise_log(struct i2c_client *client, int curr_count)
+{
+	u8 buffer[2] = {0}, cns = 0;
+	u16 im = 0, cid_im = 0, freq_scan_im = 0;
+	int ret = 0;
+
+	if (prev_count == 0 && curr_count) {
+		cnt = im_sum = cns_sum = cid_im_sum = freq_scan_im_sum = 0;
+		im_aver = cns_aver = freq_scan_im_aver = 0;
+	}
+
+	ret |= Touch_I2C_Write_Byte(client, PAGE_SELECT_REG, ANALOG_PAGE);
+
+	ret |= Touch_I2C_Read(client, IM_LSB, &buffer[0], 1);
+	ret |= Touch_I2C_Read(client, IM_MSB, &buffer[1], 1);
+	im = (buffer[1] << 8) | buffer[0];
+	im_sum += im;
+
+	ret |= Touch_I2C_Read(client, CURR_NOISE_STATE, &cns, 1);
+	cns_sum += cns;
+
+	ret |= Touch_I2C_Read(client, CID_IM, buffer, 2);
+	cid_im = (buffer[1] << 8) | buffer[0];
+	cid_im_sum += cid_im;
+
+	ret |= Touch_I2C_Read(client, FREQ_SCAN_IM, buffer, 2);
+	freq_scan_im = (buffer[1] << 8) | buffer[0];
+	freq_scan_im_sum += freq_scan_im;
+
+	ret |= Touch_I2C_Write_Byte(client, PAGE_SELECT_REG, DEFAULT_PAGE);
+
+	if(ret) {
+		TOUCH_ERR("I2C fail\n");
+		return TOUCH_FAIL;
+	}
+
+	cnt++;
+
+	if (prev_count != curr_count)
+		TOUCH_LOG("curr: CNS[%5d]   IM[%5d]   CID_IM[%5d]    FREQ_SCAN_IM[%5d]\n",
+			cns, im, cid_im, freq_scan_im);
+
+	if ( ( prev_count && curr_count == 0 )
+		|| ( cns_sum >= ULONG_MAX || im_sum >= ULONG_MAX || cid_im_sum >= ULONG_MAX
+		     || freq_scan_im_sum >= ULONG_MAX || cnt >= ULONG_MAX ) ) {
+			im_aver = im_sum/cnt;
+			cns_aver = cns_sum/cnt;
+			freq_scan_im_aver = freq_scan_im_sum/cnt;
+
+		TOUCH_LOG("Aver: CNS[%5d]   IM[%5d]   CID_IM[%5d]    FREQ_SCAN_IM[%5d] (cnt:%lu)\n",
+				cns_aver, im_aver, cid_im_aver, freq_scan_im_aver, cnt);
+
+			if(curr_count == 0)
+				prev_count = 0;
+	} else
+		prev_count = curr_count;
+
+	return TOUCH_SUCCESS;
+}
+#endif
+
 static int S3320_InterruptHandler(struct i2c_client *client,TouchReadData *pData)
 {
 	TouchFingerData *pFingerData = NULL;
@@ -1314,6 +1471,11 @@ static int S3320_InterruptHandler(struct i2c_client *client,TouchReadData *pData
 			pData->type = DATA_FINGER;
 		}
 
+#if defined(ENABLE_NOISE_LOG)
+		if ((ts->noiseState.noise_log_flag == TS_NOISE_LOG_ENABLE)
+			|| (ts->noiseState.check_noise_menu == MENU_ENTER))
+			synaptics_ts_noise_log(client, pData->count);
+#endif
 
 	} else if (regIntStatus & INTERRUPT_MASK_CUSTOM) {
 		u8 status = 0;

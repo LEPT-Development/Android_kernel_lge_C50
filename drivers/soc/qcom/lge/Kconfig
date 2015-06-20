@@ -20,6 +20,14 @@ config MACH_MSM8939_P1BDSN_GLOBAL_COM
         help
           Support for the Qualcomm MSM8939 P1BDSN GLOBAL COM device.
 
+config MACH_MSM8939_P1BSSN_SKT_KR
+        bool "MSM8939 P1BSSN_SKT_KR"
+        depends on ARCH_MSM8916
+        select MACH_LGE
+        select LGE_ENABLE_THERMAL_CORE_CONTROL
+        help
+          Support for the Qualcomm MSM8939 P1BSSN SKT KR device.
+
 endmenu
 
 menu "LGE Specific Patches"

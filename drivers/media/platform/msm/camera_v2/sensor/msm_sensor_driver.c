@@ -357,6 +357,48 @@ static int32_t msm_sensor_fill_proxy_subdevid_by_name(
 }
 #endif
 
+#if defined(CONFIG_LG_TCS)
+static int32_t msm_sensor_fill_tcs_subdevid_by_name(
+                                struct msm_sensor_ctrl_t *s_ctrl)
+{
+        int32_t rc = 0;
+        struct device_node *src_node = NULL;
+        uint32_t val = 0;
+        int32_t *tcs_subdev_id;
+        struct  msm_sensor_info_t *sensor_info;
+        struct device_node *of_node = s_ctrl->of_node;
+
+        if (!of_node)
+                return -EINVAL;
+
+        sensor_info = s_ctrl->sensordata->sensor_info;
+        tcs_subdev_id = &sensor_info->subdev_id[SUB_MODULE_TCS];
+        /*
+         * string for tcs name is valid, set sudev id to -1
+         * and try to found new id
+         */
+        *tcs_subdev_id = -1;
+
+        src_node = of_parse_phandle(of_node, "qcom,tcs-src", 0);
+        if (!src_node) {
+                CDBG("%s:%d src_node NULL\n", __func__, __LINE__);
+        } else {
+                rc = of_property_read_u32(src_node, "cell-index", &val);
+                CDBG("%s qcom,tcs cell index %d, rc %d\n", __func__,
+                        val, rc);
+                if (rc < 0) {
+                        pr_err("%s failed %d\n", __func__, __LINE__);
+                        return -EINVAL;
+                }
+                *tcs_subdev_id = val;
+                of_node_put(src_node);
+                src_node = NULL;
+        }
+
+        return rc;
+}
+#endif
+
 static int32_t msm_sensor_fill_slave_info_init_params(
 	struct msm_camera_sensor_slave_info *slave_info,
 	struct msm_sensor_info_t *sensor_info)
@@ -985,6 +1027,15 @@ int32_t msm_sensor_driver_probe(void *setting,
 	}
 #endif
 
+#if defined(CONFIG_LG_TCS)
+	rc = msm_sensor_fill_tcs_subdevid_by_name(s_ctrl);
+                if (rc < 0) {
+                        pr_err("%s failed %d\n", __func__, __LINE__);
+                        goto free_camera_info;
+                }
+
+#endif
+
 	/* Power up and probe sensor */
 	rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
 	if (rc < 0) {
@@ -1021,6 +1072,11 @@ int32_t msm_sensor_driver_probe(void *setting,
 		pr_err("failed: camera creat v4l2 rc %d", rc);
 		goto camera_power_down;
 	}
+
+	//                                                                                      
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+	msm_actuator_pwdn_mode(s_ctrl);
+#endif
 
 	/* Power down */
 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
@@ -1230,6 +1286,15 @@ static int32_t msm_sensor_driver_get_dt_data(struct msm_sensor_ctrl_t *s_ctrl)
 
 	CDBG("%s qcom,mclk-23880000 = %d\n", __func__,
 		s_ctrl->set_mclk_23880000);
+
+//                                                                                      
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+	// optional property, don't return error if absent
+	of_property_read_string(of_node, "lge,vcm-pwdn",
+		&s_ctrl->vcm_pwdn);
+	pr_err("%s lge,vcm-pwdn %s\n", __func__,
+			s_ctrl->vcm_pwdn);
+#endif
 
 	return rc;
 

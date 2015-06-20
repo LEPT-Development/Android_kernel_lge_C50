@@ -298,13 +298,6 @@ static int handle_alloc_generic_req(void *req_h, void *req)
 			alloc_req->client_id, alloc_req->proc_id);
 	client_id = check_client(alloc_req->client_id, alloc_req->proc_id,
 								CHECK);
-
-	if(client_id == DHMS_MEM_CLIENT_INVALID)
-	{
-		pr_debug("error client_id is DHMS_MEM_CLIENT_INVALID\n");
-		BUG();
-	}
-
 	if (!memblock[client_id].alloted) {
 		rc = memshare_alloc(memsh_drv->dev, alloc_req->num_bytes,
 					&memblock[client_id]);

@@ -283,20 +283,23 @@ extern int get_prop_batt_temp_raw(void);
 
 bool rt9428_battery_present_checker(void)
 {
-#ifdef CONFIG_LGE_PM_CHARGING_BQ24262_CHARGER
 	int batt_temp = 0;
-#if defined(CONFIG_QPNP_LINEAR_CHARGER)
+
+#if defined(CONFIG_LGE_PM_CHARGING_BQ24262_CHARGER) && defined(CONFIG_QPNP_LINEAR_CHARGER)
 	if (get_prop_hw_rev() > HW_REV_0)
 		batt_temp = get_prop_batt_temp_raw();
 	else
-#endif
+		batt_temp = bq24262_get_prop_batt_temp_raw();
+#elif defined(CONFIG_LGE_PM_CHARGING_BQ24262_CHARGER)
 	batt_temp = bq24262_get_prop_batt_temp_raw();
+#elif defined(CONFIG_QPNP_LINEAR_CHARGER)
+	batt_temp = get_prop_batt_temp_raw();
+#endif
+
 	if (batt_temp <= -300 || batt_temp >= 790)
 		return false;
 	else
 		return true;
-#endif
-	return true;
 }
 
 #ifdef CONFIG_LGE_PM_BATTERY_RT9428_EOC_BY_SOC
@@ -1633,7 +1636,7 @@ static int rt_parse_dt(struct device *dev, struct rt9428_platform_data *pdata)
 
 		case BATT_ID_RA4301_VC0:
 		case BATT_ID_SW3800_VC1:
-			profile_id = RT9428_BATTERY_LGC;
+			profile_id = RT9428_BATTERY_TOCAD;
 			break;
 #elif defined(CONFIG_LGE_PM_BATTERY_RT9428_BLT12_4000mAh)
 		/* e7II */
@@ -2059,11 +2062,10 @@ static int rt9428_i2c_probe(struct i2c_client *client,
 
 	return 0;
 err_psy:
-	wake_lock_destroy(&chip->update_lock);
-	wake_lock_destroy(&chip->irq_lock);
 	power_supply_unregister(&chip->fg_psy);
 err_init1:
-	mutex_destroy(&chip->io_lock);
+	wake_lock_destroy(&chip->update_lock);
+	wake_lock_destroy(&chip->irq_lock);
 err_init:
 	devm_kfree(&client->dev, chip);
 	return ret;

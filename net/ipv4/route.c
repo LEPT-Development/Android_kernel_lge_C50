@@ -516,6 +516,7 @@ static void __build_flow_key(struct flowi4 *fl4, struct sock *sk,
 	flowi4_init_output(fl4, oif, mark, tos,
 			   RT_SCOPE_UNIVERSE, prot,
 			   flow_flags,
+
 			   iph->daddr, iph->saddr, 0, 0,
 			   sk ? sock_i_uid(sk) : 0);
 }

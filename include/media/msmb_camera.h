@@ -58,6 +58,10 @@
 /*                                                        */
 #define MSM_CAMERA_SUBDEV_PROXY        17
 /*                                                        */
+/*                                                   */
+#define MSM_CAMERA_SUBDEV_TCS        18
+/*                                                   */
+
 #define MSM_MAX_CAMERA_SENSORS  5
 
 /* The below macro is defined to put an upper limit on maximum

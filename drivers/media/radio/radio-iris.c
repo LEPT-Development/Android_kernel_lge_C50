@@ -138,11 +138,6 @@ struct iris_device {
 #endif
 };
 
-#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
-static void lge_radio_ant_enable(bool enable, struct file *file);
-   int ant_count = 0;
-#endif
-
 static struct video_device *priv_videodev;
 static int iris_do_calibration(struct iris_device *radio);
 static void hci_buff_ert(struct iris_device *radio,
@@ -4017,6 +4012,12 @@ static int iris_vidioc_s_ctrl(struct file *file, void *priv,
 			}
 			if (radio->mode == FM_RECV_TURNING_ON) {
 				radio->mode = FM_RECV;
+#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
+                if(radio->fm_sw > 0 ){
+                    gpio_direction_output(radio->fm_sw, 1);
+                    FMDBG("[FM_RECV_TURNING_ON] gpio_get_value : %d\n", gpio_get_value(radio->fm_sw));
+                }
+#endif
 				iris_q_event(radio, IRIS_EVT_RADIO_READY);
 			}
 			break;
@@ -4062,6 +4063,12 @@ static int iris_vidioc_s_ctrl(struct file *file, void *priv,
 					radio->mode = FM_RECV;
 					goto END;
 				}
+#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
+                if(radio->fm_sw > 0 ){
+                    gpio_direction_output(radio->fm_sw, 0);
+                    FMDBG("[FM_TURNING_OFF] gpio_get_value : %d\n", gpio_get_value(radio->fm_sw));
+                }
+#endif
 				break;
 			case FM_TRANS:
 				radio->mode = FM_TURNING_OFF;
@@ -5165,9 +5172,6 @@ static int iris_fops_release(struct file *file)
 	FMDBG("Enter %s ", __func__);
 	if (radio == NULL)
 		return -EINVAL;
-#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
-    lge_radio_ant_enable(false, file);
-#endif
 
 	if (radio->mode == FM_OFF)
 		return 0;
@@ -5366,46 +5370,6 @@ static int is_enable_tx_possible(struct iris_device *radio)
 
 	return retval;
 }
-#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
-static void lge_radio_ant_enable(bool enable, struct file *file)
-{
-    int ret = 0;
-
-	struct iris_device *radio = video_get_drvdata(video_devdata(file));
-
-    printk("radio ant settings %d \n", enable);
-
-    if(enable)
-    {
-        if(ant_count == 0)
-        {
-            if(radio->fm_sw > 0 )
-            {
-                ret = gpio_direction_output(radio->fm_sw, 1);
-                FMDBG("FM sw(release) gpio_get_value : %d, status=%d\n", gpio_get_value(radio->fm_sw),ret);
-            }
-        }
-        ant_count ++;
-    }
-    else
-    {
-        ant_count --;
-        if(!ant_count)
-        {
-            if(radio->fm_sw > 0 ){
-                ret = gpio_direction_output(radio->fm_sw, 0);
-                FMDBG("FM sw(release) gpio_get_value : %d, status=%d\n", gpio_get_value(radio->fm_sw),ret);
-            }
-        }
-    }
-}
-
-static int iris_fops_open(struct file *file)
-{
-    lge_radio_ant_enable(true, file);
-	return 0;
-}
-#endif
 
 static const struct v4l2_ioctl_ops iris_ioctl_ops = {
 	.vidioc_querycap              = iris_vidioc_querycap,
@@ -5428,9 +5392,6 @@ static const struct v4l2_file_operations iris_fops = {
 	.unlocked_ioctl = video_ioctl2,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl32 = v4l2_compat_ioctl32,
-#endif
-#ifdef CONFIG_LGE_ANT_SWITCH_FMRADIO_TDMB
-	.open			= iris_fops_open,
 #endif
 	.release        = iris_fops_release,
 };

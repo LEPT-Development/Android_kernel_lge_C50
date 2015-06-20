@@ -22,6 +22,11 @@
 
 #include "bmi160.h"
 #include "bmi160_driver.h"
+#include <linux/kobject.h>
+#include <linux/string.h>
+#include <linux/sysfs.h>
+#include <linux/slab.h>
+#include <linux/init.h>
 #include <linux/device.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
@@ -33,6 +38,145 @@
 #define LMADA     (1)
 uint64_t g_current_apts_us;
 static unsigned char g_fifo_data_arr[2048];/*1024 + 12*4*/
+
+#ifdef BMI_CAL_MSG_UEVENT
+struct bmi_cal_obj {
+	struct kobject kobj;
+	char msg[100];
+};
+
+struct bmi_cal_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct bmi_cal_obj *msg, struct bmi_cal_attribute *attr, char *buf);
+	ssize_t (*store)(struct bmi_cal_obj *msg, struct bmi_cal_attribute *attr, const char *buf, size_t count);
+};
+
+#define to_bmi_cal_obj(x) container_of(x, struct bmi_cal_obj, kobj)
+#define to_bmi_cal_attr(x) container_of(x, struct bmi_cal_attribute, attr)
+
+
+static struct kset *bmi_sensor_cal_kset;
+static struct bmi_cal_obj *g_bmi_cal_obj;
+
+
+
+static ssize_t bmi_cal_attr_show(struct kobject *kobj,
+			     struct attribute *attr,
+			     char *buf)
+{
+	struct bmi_cal_attribute *attribute;
+	struct bmi_cal_obj *bmi;
+
+	attribute = to_bmi_cal_attr(attr);
+	bmi = to_bmi_cal_obj(kobj);
+
+	if (!attribute->show)
+		return -EIO;
+
+	return attribute->show(bmi, attribute, buf);
+}
+
+static ssize_t bmi_cal_attr_store(struct kobject *kobj,
+			      struct attribute *attr,
+			      const char *buf, size_t len)
+{
+	struct bmi_cal_attribute *attribute;
+	struct bmi_cal_obj *bmi;
+
+	attribute = to_bmi_cal_attr(attr);
+	bmi = to_bmi_cal_obj(kobj);
+
+	if (!attribute->store)
+		return -EIO;
+
+	return attribute->store(bmi, attribute, buf, len);
+}
+
+
+static const struct sysfs_ops bmi_sysfs_ops = {
+	.show = bmi_cal_attr_show,
+	.store = bmi_cal_attr_store,
+};
+
+static void bmi_cal_release(struct kobject *kobj)
+{
+	struct bmi_cal_obj *bmi;
+
+	bmi = to_bmi_cal_obj(kobj);
+	kfree(bmi);
+}
+
+
+
+
+
+
+void bmi_send_cal_msg(char *msg)
+{
+	/*
+	 * We are always responsible for sending the uevent that the kobject
+	 * was added to the system.
+	 */
+	char *envp[2] = {msg, NULL};
+	if(g_bmi_cal_obj != NULL) {
+	  kobject_uevent_env( &g_bmi_cal_obj->kobj, KOBJ_CHANGE, envp);
+  }
+
+}
+EXPORT_SYMBOL(bmi_send_cal_msg);
+
+static ssize_t bmi_cal_show(struct bmi_cal_obj *cal_obj, struct bmi_cal_attribute *attr,
+			char *buf)
+{
+	return sprintf(buf, "%s\n", (char*)cal_obj->msg);
+}
+
+static ssize_t bmi_cal_store(struct bmi_cal_obj *cal_obj, struct bmi_cal_attribute *attr,
+			 const char *buf, size_t count)
+{
+	sscanf(buf, "%s", (char*)cal_obj->msg);
+
+	bmi_send_cal_msg((char*)buf);
+	return count;
+}
+
+
+static struct bmi_cal_attribute bmi_cal_attribute =
+	__ATTR(msg, 0664, bmi_cal_show, bmi_cal_store);
+
+
+/*
+ * Create a group of attributes so that we can create and destroy them all
+ * at once.
+ */
+static struct attribute *bmi_cal_default_attrs[] = {
+	&bmi_cal_attribute.attr,
+	NULL,	/* need to NULL terminate the list of attributes */
+};
+
+/*
+ * Our own ktype for our kobjects.  Here we specify our sysfs ops, the
+ * release function, and the set of default attributes we want created
+ * whenever a kobject of this type is registered with the kernel.
+ */
+static struct kobj_type bmi_ktype = {
+	.sysfs_ops = &bmi_sysfs_ops,
+	.release = bmi_cal_release,
+	.default_attrs = bmi_cal_default_attrs,
+};
+
+
+static void destroy_bmi_obj(struct bmi_cal_obj *bmi)
+{
+	kobject_put(&bmi->kobj);
+}
+
+
+
+
+
+
+#endif
 
 enum BMI_SENSOR_INT_T {
 	/* Interrupt enable0*/
@@ -55,6 +199,7 @@ enum BMI_SENSOR_INT_T {
 	BMI_NOMOTION_X_INT,
 	BMI_NOMOTION_Y_INT,
 	BMI_NOMOTION_Z_INT,
+	BMI_STEP_DETECTOR_INT,
 	INT_TYPE_MAX
 };
 
@@ -204,7 +349,7 @@ static const char *bmi_axis_name[AXIS_MAX] = {"x", "y", "z"};
 
 static const int bmi_interrupt_type[] = {
 	/*!bmi interrupt type */
-	/* Interrupt enable0 */
+	/* Interrupt enable0 , index=0~6*/
 	BMI160_ANYMO_X_EN,
 	BMI160_ANYMO_Y_EN,
 	BMI160_ANYMO_Z_EN,
@@ -212,7 +357,7 @@ static const int bmi_interrupt_type[] = {
 	BMI160_S_TAP_EN,
 	BMI160_ORIENT_EN,
 	BMI160_FLAT_EN,
-	/* Interrupt enable1*/
+	/* Interrupt enable1, index=7~13*/
 	BMI160_HIGH_X_EN,
 	BMI160_HIGH_Y_EN,
 	BMI160_HIGH_Z_EN,
@@ -220,10 +365,11 @@ static const int bmi_interrupt_type[] = {
 	BMI160_DRDY_EN,
 	BMI160_FFULL_EN,
 	BMI160_FWM_EN,
-	/* Interrupt enable2 */
+	/* Interrupt enable2, index = 14~17*/
 	BMI160_NOMOTION_X_EN,
 	BMI160_NOMOTION_Y_EN,
-	BMI160_NOMOTION_Z_EN
+	BMI160_NOMOTION_Z_EN,
+	BMI160_STEP_DETECTOR_EN
 };
 
 /*! bmi sensor time depend on ODR*/
@@ -247,7 +393,7 @@ struct bmi160_type_mapping_type {
 	/*! bmi16x chip revision code */
 	uint16_t revision_id;
 
-	/*! bma2x2 sensor name */
+	/*! bmi160 sensor name */
 	const char *sensor_name;
 };
 
@@ -487,6 +633,8 @@ static int bmi_input_init(struct bmi_client_data *client_data)
 	input_set_capability(dev, EV_ABS, ABS_MISC);
 	input_set_capability(dev, EV_MSC, INPUT_EVENT_SGM);
 	input_set_capability(dev, EV_MSC, INPUT_EVENT_STEP_DETECTOR);
+	input_set_capability(dev, EV_MSC, INPUT_EVENT_FAST_ACC_CALIB_DONE);
+	input_set_capability(dev, EV_MSC, INPUT_EVENT_FAST_GYRO_CALIB_DONE);
 	input_set_drvdata(dev, client_data);
 
 	err = input_register_device(dev);
@@ -761,6 +909,8 @@ static ssize_t bmi160_fifo_data_sel_store(struct device *dev,
 	int err;
 	unsigned long data;
 	unsigned char fifo_datasel;
+	unsigned int enable_flag_acc, enable_flag_gyro, enable_flag_mag;
+
 
 	err = kstrtoul(buf, 10, &data);
 	if (err)
@@ -771,7 +921,34 @@ static ssize_t bmi160_fifo_data_sel_store(struct device *dev,
 
 
 	fifo_datasel = (unsigned char)data;
+	enable_flag_acc = (unsigned int) (fifo_datasel & (1 << BMI_ACC_SENSOR)) ? 1 :  0;
+	enable_flag_gyro = (unsigned int) (fifo_datasel & (1 << BMI_GYRO_SENSOR) ? 1 : 0);
+	enable_flag_mag = (unsigned int) ((fifo_datasel & (1 << BMI_MAG_SENSOR)) ? 1 : 0);
 
+  if(enable_flag_acc  == 1){
+    atomic_set(&client_data->acc_wkqueue_en,  1);
+  } else {
+    atomic_set(&client_data->acc_wkqueue_en,  0);
+  }
+  if(enable_flag_gyro == 1){
+    atomic_set(&client_data->gyro_wkqueue_en, 1);
+  } else {
+    atomic_set(&client_data->gyro_wkqueue_en, 0);
+  }
+  if(enable_flag_mag  == 1){
+    atomic_set(&client_data->mag_wkqueue_en,  1);
+  } else {
+    atomic_set(&client_data->mag_wkqueue_en,  0);
+  }
+
+	if(enable_flag_acc == 1 || enable_flag_gyro == 1 || enable_flag_mag == 1 ){
+		 atomic_set(&client_data->wkqueue_en, 1);
+		 printk(KERN_INFO "bmi160_fifo_data_sel_store enabled sensor wq\n");
+	}
+	else if(enable_flag_acc == 0 && enable_flag_gyro == 0 && enable_flag_mag == 0){
+		 atomic_set(&client_data->wkqueue_en, 0);
+		 printk(KERN_INFO "bmi160_fifo_data_sel_store disabled sensor wq\n");
+	}
 
 	err += BMI_CALL_API(set_fifo_acc_en)
 			((fifo_datasel & (1 << BMI_ACC_SENSOR)) ? 1 :  0);
@@ -803,15 +980,12 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 	/*u8 skip_frame_cnt = 0;*/
 	u8 acc_frm_cnt = 0;/*0~146*/
 	u8 gyro_frm_cnt = 0;
-	u8 mag_frm_cnt = 0;
-	u8 tmp_frm_cnt = 0;
 	/*u8 tmp_odr = 0;*/
 	/*uint64_t current_apts_us = 0;*/
 	/*fifo data last frame start_index A G M*/
 	u64 fifo_time = 0;
 	static u32 current_frm_ts;
 	u16 fifo_index = 0;/* fifo data buff index*/
-	u16 fifo_index_tmp = 0;
 	u16 i = 0;
 	s8 last_return_st = 0;
 	int err = 0;
@@ -849,22 +1023,6 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 	bmi_fifo_frame_bytes_extend_calc(client_data, &frame_bytes);
 /* search sensor time sub function firstly */
 	for (fifo_index = 0; fifo_index < fifo_length;) {
-		/* conside limited HW i2c burst reading issue,
-		need to re-calc index 256 512 768 1024...*/
-		if ((fifo_index_tmp >> 8) != (fifo_index >> 8)) {
-			if (fifo_data[fifo_index_tmp] ==
-				fifo_data[(fifo_index >> 8)<<8]) {
-				fifo_index = (fifo_index >> 8) << 8;
-				fifo_length +=
-					(fifo_index - fifo_index_tmp + 1);
-			}
-		}
-		fifo_index_tmp = fifo_index;
-		/* compare index with 256/512/ before doing parsing*/
-		if (((fifo_index + frame_bytes) >> 8) != (fifo_index >> 8)) {
-			fifo_index = ((fifo_index + frame_bytes) >> 8) << 8;
-			continue;
-		}
 
 		frame_head = fifo_data[fifo_index];
 
@@ -890,45 +1048,6 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 				break;
 			}
 
-			/* mag frm index = gyro */
-			mag_frm_cnt = gyro_frm_cnt;
-			mag_frame_arr[mag_frm_cnt].x =
-				fifo_data[fifo_index + 1] << 8 |
-					fifo_data[fifo_index + 0];
-			mag_frame_arr[mag_frm_cnt].y =
-				fifo_data[fifo_index + 3] << 8 |
-					fifo_data[fifo_index + 2];
-			mag_frame_arr[mag_frm_cnt].z =
-				fifo_data[fifo_index + 5] << 8 |
-					fifo_data[fifo_index + 4];
-			mag_frame_arr[mag_frm_cnt].r =
-				fifo_data[fifo_index + 7] << 8 |
-					fifo_data[fifo_index + 6];
-
-			gyro_frame_arr[gyro_frm_cnt].x =
-				fifo_data[fifo_index + 9] << 8 |
-					fifo_data[fifo_index + 8];
-			gyro_frame_arr[gyro_frm_cnt].y =
-				fifo_data[fifo_index + 11] << 8 |
-					fifo_data[fifo_index + 10];
-			gyro_frame_arr[gyro_frm_cnt].z =
-				fifo_data[fifo_index + 13] << 8 |
-					fifo_data[fifo_index + 12];
-
-			acc_frame_arr[acc_frm_cnt].x =
-				fifo_data[fifo_index + 15] << 8 |
-					fifo_data[fifo_index + 14];
-			acc_frame_arr[acc_frm_cnt].y =
-				fifo_data[fifo_index + 17] << 8 |
-					fifo_data[fifo_index + 16];
-			acc_frame_arr[acc_frm_cnt].z =
-				fifo_data[fifo_index + 19] << 8 |
-					fifo_data[fifo_index + 18];
-
-			mag_frm_cnt++;/* M fram_cnt++ */
-			gyro_frm_cnt++;/* G fram_cnt++ */
-			acc_frm_cnt++;/* A fram_cnt++ */
-
 			fifo_index = fifo_index + MGA_BYTES_FRM;
 			break;
 		}
@@ -940,34 +1059,6 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 				last_return_st = FIFO_M_A_OVER_LEN;
 				break;
 			}
-
-			mag_frm_cnt = acc_frm_cnt;
-
-			mag_frame_arr[mag_frm_cnt].x =
-				fifo_data[fifo_index + 1] << 8 |
-					fifo_data[fifo_index + 0];
-			mag_frame_arr[mag_frm_cnt].y =
-				fifo_data[fifo_index + 3] << 8 |
-					fifo_data[fifo_index + 2];
-			mag_frame_arr[mag_frm_cnt].z =
-				fifo_data[fifo_index + 5] << 8 |
-					fifo_data[fifo_index + 4];
-			mag_frame_arr[mag_frm_cnt].r =
-				fifo_data[fifo_index + 7] << 8 |
-					fifo_data[fifo_index + 6];
-
-			acc_frame_arr[acc_frm_cnt].x =
-				fifo_data[fifo_index + 9] << 8 |
-					fifo_data[fifo_index + 8];
-			acc_frame_arr[acc_frm_cnt].y =
-				fifo_data[fifo_index + 11] << 8 |
-					fifo_data[fifo_index + 10];
-			acc_frame_arr[acc_frm_cnt].z =
-				fifo_data[fifo_index + 13] << 8 |
-					fifo_data[fifo_index + 12];
-
-			mag_frm_cnt++;/* M fram_cnt++ */
-			acc_frm_cnt++;/* A fram_cnt++ */
 
 			fifo_index = fifo_index + MA_BYTES_FRM;
 			break;
@@ -981,34 +1072,8 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 				break;
 			}
 
-			mag_frm_cnt = gyro_frm_cnt;
-			mag_frame_arr[mag_frm_cnt].x =
-				fifo_data[fifo_index + 1] << 8 |
-					fifo_data[fifo_index + 0];
-			mag_frame_arr[mag_frm_cnt].y =
-				fifo_data[fifo_index + 3] << 8 |
-					fifo_data[fifo_index + 2];
-			mag_frame_arr[mag_frm_cnt].z =
-				fifo_data[fifo_index + 5] << 8 |
-					fifo_data[fifo_index + 4];
-			mag_frame_arr[mag_frm_cnt].r =
-				fifo_data[fifo_index + 7] << 8 |
-					fifo_data[fifo_index + 6];
-
-			gyro_frame_arr[gyro_frm_cnt].x =
-				fifo_data[fifo_index + 9] << 8 |
-					fifo_data[fifo_index + 8];
-			gyro_frame_arr[gyro_frm_cnt].y =
-				fifo_data[fifo_index + 11] << 8 |
-					fifo_data[fifo_index + 10];
-			gyro_frame_arr[gyro_frm_cnt].z =
-				fifo_data[fifo_index + 13] << 8 |
-					fifo_data[fifo_index + 12];
-
-			mag_frm_cnt++;/* M fram_cnt++ */
-			gyro_frm_cnt++;/* G fram_cnt++ */
 			fifo_index = fifo_index + MG_BYTES_FRM;
-		break;
+			break;
 		}
 
 		case FIFO_HEAD_G_A:
@@ -1108,22 +1173,7 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 				break;
 			}
 
-			mag_frame_arr[mag_frm_cnt].x =
-				fifo_data[fifo_index + 1] << 8 |
-					fifo_data[fifo_index + 0];
-			mag_frame_arr[mag_frm_cnt].y =
-				fifo_data[fifo_index + 3] << 8 |
-					fifo_data[fifo_index + 2];
-			mag_frame_arr[mag_frm_cnt].z =
-				fifo_data[fifo_index + 5] << 8 |
-					fifo_data[fifo_index + 4];
-			mag_frame_arr[mag_frm_cnt].r =
-				fifo_data[fifo_index + 7] << 8 |
-					fifo_data[fifo_index + 6];
-
-			mag_frm_cnt++;/* M fram_cnt++ */
-
-			fifo_index = fifo_index + A_BYTES_FRM;
+			fifo_index = fifo_index + M_BYTES_FRM;
 			break;
 		}
 
@@ -1216,181 +1266,35 @@ static int bmi_fifo_analysis_handle(struct bmi_client_data *client_data,
 		}
 	}
 
-	/*only for M*/
-	if (client_data->fifo_data_sel == BMI_FIFO_M_SEL) {
-		for (i = 0; i < mag_frm_cnt; i++) {
-			/*current_frm_ts += 256;*/
+/*only for A G*/
+	if (client_data->fifo_data_sel == BMI_FIFO_G_A_SEL) {
+
+		for (i = 0; i < gyro_frm_cnt; i++) {
+			/*sensor timeLSB*/
+			/*dia(sensor_time) = fifo_time & (0xff), uint:LSB, 39.0625us*/
+			/*AP tinmestamp 390625/10000 = 625 /16 */
 			current_frm_ts +=
-		sensortime_duration_tbl[odr.mag_odr].ts_duration_us*LMADA;
+			sensortime_duration_tbl[odr.gyro_odr].ts_duration_us*LMADA;
 
-			mag.x = mag_frame_arr[i].x >> 3;
-			mag.y = mag_frame_arr[i].y >> 3;
-			mag.z = mag_frame_arr[i].z >> 1;
-			mag.r = mag_frame_arr[i].r >> 2;
-			bmi160_mag_compensate_xyz_raw(&mag_comp_xyz, mag);
-			len = sprintf(buf, "%s %d %d %d %d ",
-						MAG_FIFO_HEAD,
-						mag_comp_xyz.x,
-						mag_comp_xyz.y,
-						mag_comp_xyz.z,
-						current_frm_ts
-					);
-
-			buf += len;
-			err += len;
-		}
-
-	}
-
-/*only for A G && A M G*/
-if ((client_data->fifo_data_sel == BMI_FIFO_G_A_SEL) ||
-		(client_data->fifo_data_sel == BMI_FIFO_M_G_A_SEL)) {
-
-	for (i = 0; i < gyro_frm_cnt; i++) {
-		/*sensor timeLSB*/
-		/*dia(sensor_time) = fifo_time & (0xff), uint:LSB, 39.0625us*/
-		/*AP tinmestamp 390625/10000 = 625 /16 */
-		current_frm_ts +=
-		sensortime_duration_tbl[odr.gyro_odr].ts_duration_us*LMADA;
-
-		if (mag_frame_arr[i].x) {
-				mag.x = mag_frame_arr[i].x >> 3;
-				mag.y = mag_frame_arr[i].y >> 3;
-				mag.z = mag_frame_arr[i].z >> 1;
-				mag.r = mag_frame_arr[i].r >> 2;
-			bmi160_mag_compensate_xyz_raw(&mag_comp_xyz, mag);
-				len = sprintf(buf,
-			"%s %d %d %d %d %s %d %d %d %d %s %d %d %d %d ",
-					GYRO_FIFO_HEAD,
-					gyro_frame_arr[i].x,
-					gyro_frame_arr[i].y,
-					gyro_frame_arr[i].z,
-					current_frm_ts,
-					ACC_FIFO_HEAD,
-					acc_frame_arr[i].x,
-					acc_frame_arr[i].y,
-					acc_frame_arr[i].z,
-					current_frm_ts,
-					MAG_FIFO_HEAD,
-					mag_comp_xyz.x,
-					mag_comp_xyz.y,
-					mag_comp_xyz.z,
-					current_frm_ts);
-				buf += len;
-				err += len;
-		} else {
-				len = sprintf(buf,
-			"%s %d %d %d %d %s %d %d %d %d ",
-					GYRO_FIFO_HEAD,
-					gyro_frame_arr[i].x,
-					gyro_frame_arr[i].y,
-					gyro_frame_arr[i].z,
-					current_frm_ts,
-					ACC_FIFO_HEAD,
-					acc_frame_arr[i].x,
-					acc_frame_arr[i].y,
-					acc_frame_arr[i].z,
-					current_frm_ts
-					);
-
-				buf += len;
-				err += len;
-		}
-	}
-
-}
-
-/*only for A M */
-if (client_data->fifo_data_sel == BMI_FIFO_M_A_SEL) {
-	for (i = 0; i < acc_frm_cnt; i++) {
-		/*sensor timeLSB*/
-		/*dia(sensor_time) = fifo_time & (0xff), uint:LSB, 39.0625us*/
-		/*AP tinmestamp 390625/10000 = 625 /16 */
-		/*current_frm_ts += 256;*/
-		current_frm_ts +=
-		sensortime_duration_tbl[odr.acc_odr].ts_duration_us*LMADA;
-
-		if (mag_frame_arr[i].x) {
-				mag.x = mag_frame_arr[i].x >> 3;
-				mag.y = mag_frame_arr[i].y >> 3;
-				mag.z = mag_frame_arr[i].z >> 1;
-				mag.r = mag_frame_arr[i].r >> 2;
-			bmi160_mag_compensate_xyz_raw(&mag_comp_xyz, mag);
-				len = sprintf(buf,
-			"%s %d %d %d %d %s %d %d %d %d ",
-					ACC_FIFO_HEAD,
-					acc_frame_arr[i].x,
-					acc_frame_arr[i].y,
-					acc_frame_arr[i].z,
-					current_frm_ts,
-					MAG_FIFO_HEAD,
-					mag_comp_xyz.x,
-					mag_comp_xyz.y,
-					mag_comp_xyz.z,
-					current_frm_ts);
-				buf += len;
-				err += len;
-		} else {
-			len = sprintf(buf, "%s %d %d %d %d ",
-					ACC_FIFO_HEAD,
-					acc_frame_arr[i].x,
-					acc_frame_arr[i].y,
-					acc_frame_arr[i].z,
-					current_frm_ts
-					);
-
-				buf += len;
-				err += len;
-		}
-	}
-}
-
-/*only forG M*/
-if (client_data->fifo_data_sel == BMI_FIFO_M_G_SEL) {
-	if (gyro_frm_cnt) {
-		tmp_frm_cnt = gyro_frm_cnt;
-		/*tmp_odr = odr.gyro_odr;*/
-	}
-
-	for (i = 0; i < tmp_frm_cnt; i++) {
-		current_frm_ts +=
-		sensortime_duration_tbl[odr.gyro_odr].ts_duration_us*LMADA;
-		if (mag_frame_arr[i].x) {
-			mag.x = mag_frame_arr[i].x >> 3;
-			mag.y = mag_frame_arr[i].y >> 3;
-			mag.z = mag_frame_arr[i].z >> 1;
-			mag.r = mag_frame_arr[i].r >> 2;
-			bmi160_mag_compensate_xyz_raw(&mag_comp_xyz, mag);
 			len = sprintf(buf,
-		"%s %d %d %d %d %s %d %d %d %d ",
-				GYRO_FIFO_HEAD,
-				gyro_frame_arr[i].x,
-				gyro_frame_arr[i].y,
-				gyro_frame_arr[i].z,
-				current_frm_ts,
-				MAG_FIFO_HEAD,
-				mag_comp_xyz.x,
-				mag_comp_xyz.y,
-				mag_comp_xyz.z,
-				current_frm_ts);
-			buf += len;
-			err += len;
-		} else {
+				"%s %d %d %d %d %s %d %d %d %d ",
+						GYRO_FIFO_HEAD,
+						gyro_frame_arr[i].x,
+						gyro_frame_arr[i].y,
+						gyro_frame_arr[i].z,
+						current_frm_ts,
+						ACC_FIFO_HEAD,
+						acc_frame_arr[i].x,
+						acc_frame_arr[i].y,
+						acc_frame_arr[i].z,
+						current_frm_ts
+						);
 
-			len = sprintf(buf, "%s %d %d %d %d ",
-				GYRO_FIFO_HEAD,
-				gyro_frame_arr[i].x,
-				gyro_frame_arr[i].y,
-				gyro_frame_arr[i].z,
-				current_frm_ts
-				);
+					buf += len;
+					err += len;
+			}
 
-				buf += len;
-				err += len;
-		}
 	}
-}
-
 
 	return err;
 
@@ -1666,6 +1570,50 @@ static int bmi160_set_acc_op_mode(struct bmi_client_data *client_data,
 
 }
 
+
+static int bmi160_set_gyro_op_mode(struct bmi_client_data *client_data,
+							unsigned long op_mode)
+{
+	int err = 0;
+
+	mutex_lock(&client_data->mutex_op_mode);
+
+	if (op_mode < BMI_GYRO_PM_MAX) {
+		switch (op_mode) {
+		case BMI_GYRO_PM_NORMAL:
+			err = BMI_CALL_API(set_command_register)
+				(bmi_pmu_cmd_gyro_arr[BMI_GYRO_PM_NORMAL]);
+			client_data->pw.gyro_pm = BMI_GYRO_PM_NORMAL;
+			mdelay(3);
+			break;
+		case BMI_GYRO_PM_FAST_START:
+			err = BMI_CALL_API(set_command_register)
+				(bmi_pmu_cmd_gyro_arr[BMI_GYRO_PM_FAST_START]);
+			client_data->pw.gyro_pm = BMI_GYRO_PM_FAST_START;
+			mdelay(3);
+			break;
+		case BMI_GYRO_PM_SUSPEND:
+			err = BMI_CALL_API(set_command_register)
+				(bmi_pmu_cmd_gyro_arr[BMI_GYRO_PM_SUSPEND]);
+			client_data->pw.gyro_pm = BMI_GYRO_PM_SUSPEND;
+			mdelay(3);
+			break;
+		default:
+			mutex_unlock(&client_data->mutex_op_mode);
+			return -EINVAL;
+		}
+	} else {
+		mutex_unlock(&client_data->mutex_op_mode);
+		return -EINVAL;
+	}
+
+	mutex_unlock(&client_data->mutex_op_mode);
+
+	return err;
+
+
+}
+
 static ssize_t bmi160_temperature_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1884,13 +1832,18 @@ static ssize_t bmi160_step_detector_enable_store(struct device *dev,
 {
 	unsigned long data;
 	int err;
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
 
 	err = kstrtoul(buf, 10, &data);
 	if (err)
 		return err;
 
 	err = BMI_CALL_API(set_stepdetector_enable)((unsigned char)data);
-
+	if (data == 0)
+	{
+		client_data->pedo_data.wkar_step_detector_status = 0;
+	}
 	if (err < 0)
 		return -EIO;
 	return count;
@@ -2044,9 +1997,16 @@ static ssize_t bmi160_acc_value_show(struct device *dev,
 			bmi160_udata.x, bmi160_udata.y, bmi160_udata.z);
 }
 
+#ifdef BMI160_CALIBRATION
 static ssize_t bmi160_acc_fast_calibration_x_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
+#ifdef BMI160_CALIBRATION
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	return sprintf(buf, "%d\n", atomic_read(&client_data->fast_calib_x_rslt));
+#else
 	unsigned char data;
 	int err;
 
@@ -2055,6 +2015,7 @@ static ssize_t bmi160_acc_fast_calibration_x_show(struct device *dev,
 	if (err < 0)
 		return err;
 	return sprintf(buf, "%d\n", data);
+#endif
 }
 
 static ssize_t bmi160_acc_fast_calibration_x_store(struct device *dev,
@@ -2064,12 +2025,83 @@ static ssize_t bmi160_acc_fast_calibration_x_store(struct device *dev,
 	unsigned long data;
 	int err;
 	s8 accel_offset_x = 0;
+#ifdef BMI160_CALIBRATION
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+	unsigned int timeout_shaking = 0;
+	int tilt_check_count = 0;
+	struct bmi160acc_t udata;
+	struct bmi160_axis_data_t bmi160_udata_pre;
+	struct bmi160_axis_data_t bmi160_udata;
+#endif
 	err = kstrtoul(buf, 10, &data);
 	if (err)
 		return err;
 	/* 0: disable, 1: +1g, 2: -1g, 3: 0g */
 	if (data > 3)
 		return -EINVAL;
+#ifdef BMI160_CALIBRATION
+	atomic_set(&client_data->fast_calib_x_rslt, 0);
+
+	err = BMI_CALL_API(read_acc_xyz)(&udata);
+	if (err < 0)
+		return err;
+
+	bmi160_udata_pre.x = udata.x;
+	bmi160_udata_pre.y = udata.y;
+	bmi160_udata_pre.z = udata.z;
+
+	bmi_remap_sensor_data(&bmi160_udata_pre, client_data);
+
+	/* Device is upside down */
+	if (bmi160_udata_pre.z < 0) {
+		dev_info(client_data->dev,"device is upside down. data : %d",bmi160_udata_pre.z);
+		return -EINVAL;
+	}
+	do{
+		mdelay(20);
+		err = BMI_CALL_API(read_acc_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+		bmi160_udata.x = udata.x;
+		bmi160_udata.y = udata.y;
+		bmi160_udata.z = udata.z;
+
+		bmi_remap_sensor_data(&bmi160_udata, client_data);
+
+		dev_info(client_data->dev,"===============moved x=============== timeout = %d",timeout_shaking);
+		dev_info(client_data->dev,"(%d, %d, %d) (%d, %d, %d)",
+			bmi160_udata_pre.x,	bmi160_udata_pre.y, bmi160_udata_pre.z, bmi160_udata.x,bmi160_udata.y,bmi160_udata.z );
+
+		if((abs(bmi160_udata.x - bmi160_udata_pre.x) > BMI160_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.y - bmi160_udata_pre.y)) > BMI160_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.z - bmi160_udata_pre.z)) > BMI160_SHAKING_DETECT_THRESHOLD)) {
+				atomic_set(&client_data->fast_calib_rslt, 2);
+				dev_err(client_data->dev,"===============shaking x===============");
+				return -EINVAL;
+		}
+		else{
+			bmi160_udata_pre.x = bmi160_udata.x;
+			bmi160_udata_pre.y = bmi160_udata.y;
+			bmi160_udata_pre.z = bmi160_udata.z;
+			if (abs(bmi160_udata.y) > BMI160_FAST_CALIB_TILT_LIMIT
+				|| abs(bmi160_udata.x) > BMI160_FAST_CALIB_TILT_LIMIT)
+				tilt_check_count++;
+			if (tilt_check_count > 5) {
+				atomic_set(&client_data->fast_calib_rslt, 3);
+				dev_err(client_data->dev,"============tilted over 15 degree===========");
+				return -EINVAL;
+			}
+		}
+		timeout_shaking++;
+	}while(timeout_shaking < 10);
+	dev_info(client_data->dev,"===============complete shaking x check===============");
+#endif
+
+#ifdef BMI160_CALIBRATION
+		atomic_set(&client_data->fast_calib_x_rslt, 1);
+#endif
 
 	err = BMI_CALL_API(set_accel_foc_trigger)(X_AXIS,
 					data, &accel_offset_x);
@@ -2082,6 +2114,12 @@ static ssize_t bmi160_acc_fast_calibration_x_store(struct device *dev,
 static ssize_t bmi160_acc_fast_calibration_y_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
+#ifdef BMI160_CALIBRATION
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	return sprintf(buf, "%d\n", atomic_read(&client_data->fast_calib_y_rslt));
+#else
 	unsigned char data;
 	int err;
 
@@ -2090,6 +2128,7 @@ static ssize_t bmi160_acc_fast_calibration_y_show(struct device *dev,
 	if (err < 0)
 		return err;
 	return sprintf(buf, "%d\n", data);
+#endif
 }
 
 static ssize_t bmi160_acc_fast_calibration_y_store(struct device *dev,
@@ -2099,6 +2138,15 @@ static ssize_t bmi160_acc_fast_calibration_y_store(struct device *dev,
 	unsigned long data;
 	int err;
 	s8 accel_offset_y = 0;
+#ifdef BMI160_CALIBRATION
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+	unsigned int timeout_shaking = 0;
+	int tilt_check_count = 0;
+	struct bmi160acc_t udata;
+	struct bmi160_axis_data_t bmi160_udata_pre;
+	struct bmi160_axis_data_t bmi160_udata;
+#endif
 
 	err = kstrtoul(buf, 10, &data);
 	if (err)
@@ -2106,6 +2154,69 @@ static ssize_t bmi160_acc_fast_calibration_y_store(struct device *dev,
 	/* 0: disable, 1: +1g, 2: -1g, 3: 0g */
 	if (data > 3)
 		return -EINVAL;
+
+#ifdef BMI160_CALIBRATION
+		atomic_set(&client_data->fast_calib_y_rslt, 0);
+
+		err = BMI_CALL_API(read_acc_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+		bmi160_udata_pre.x = udata.x;
+		bmi160_udata_pre.y = udata.y;
+		bmi160_udata_pre.z = udata.z;
+
+		bmi_remap_sensor_data(&bmi160_udata_pre, client_data);
+
+		/* Device is upside down */
+		if (bmi160_udata_pre.z < 0) {
+			dev_info(client_data->dev,"device is upside down. data : %d",bmi160_udata_pre.z);
+			return -EINVAL;
+		}
+		do{
+			mdelay(20);
+			err = BMI_CALL_API(read_acc_xyz)(&udata);
+			if (err < 0)
+				return err;
+
+			bmi160_udata.x = udata.x;
+			bmi160_udata.y = udata.y;
+			bmi160_udata.z = udata.z;
+
+			bmi_remap_sensor_data(&bmi160_udata, client_data);
+
+			dev_info(client_data->dev,"===============moved y=============== timeout = %d",timeout_shaking);
+			dev_info(client_data->dev,"(%d, %d, %d) (%d, %d, %d)",
+				bmi160_udata_pre.x, bmi160_udata_pre.y, bmi160_udata_pre.z, bmi160_udata.x,bmi160_udata.y,bmi160_udata.z );
+
+			if((abs(bmi160_udata.x - bmi160_udata_pre.x) > BMI160_SHAKING_DETECT_THRESHOLD)
+				|| (abs((bmi160_udata.y - bmi160_udata_pre.y)) > BMI160_SHAKING_DETECT_THRESHOLD)
+				|| (abs((bmi160_udata.z - bmi160_udata_pre.z)) > BMI160_SHAKING_DETECT_THRESHOLD)) {
+					atomic_set(&client_data->fast_calib_rslt, 4);
+					dev_err(client_data->dev,"===============shaking y===============");
+					return -EINVAL;
+			}
+			else{
+				bmi160_udata_pre.x = bmi160_udata.x;
+				bmi160_udata_pre.y = bmi160_udata.y;
+				bmi160_udata_pre.z = bmi160_udata.z;
+				if (abs(bmi160_udata.y) > BMI160_FAST_CALIB_TILT_LIMIT
+					|| abs(bmi160_udata.x) > BMI160_FAST_CALIB_TILT_LIMIT)
+					tilt_check_count++;
+				if (tilt_check_count > 5) {
+					atomic_set(&client_data->fast_calib_rslt, 5);
+					dev_err(client_data->dev,"============tilted over 15 degree===========");
+					return -EINVAL;
+				}
+			}
+			timeout_shaking++;
+		}while(timeout_shaking < 10);
+		dev_info(client_data->dev,"===============complete shaking y check===============");
+#endif
+
+#ifdef BMI160_CALIBRATION
+			atomic_set(&client_data->fast_calib_y_rslt, 1);
+#endif
 
 	err = BMI_CALL_API(set_accel_foc_trigger)(Y_AXIS,
 				data, &accel_offset_y);
@@ -2118,6 +2229,12 @@ static ssize_t bmi160_acc_fast_calibration_y_store(struct device *dev,
 static ssize_t bmi160_acc_fast_calibration_z_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
+#ifdef BMI160_CALIBRATION
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	return sprintf(buf, "%d\n", atomic_read(&client_data->fast_calib_z_rslt));
+#else
 	unsigned char data;
 	int err;
 
@@ -2126,6 +2243,7 @@ static ssize_t bmi160_acc_fast_calibration_z_show(struct device *dev,
 	if (err < 0)
 		return err;
 	return sprintf(buf, "%d\n", data);
+#endif
 }
 
 static ssize_t bmi160_acc_fast_calibration_z_store(struct device *dev,
@@ -2135,6 +2253,14 @@ static ssize_t bmi160_acc_fast_calibration_z_store(struct device *dev,
 	unsigned long data;
 	int err;
 	s8 accel_offset_z = 0;
+#ifdef BMI160_CALIBRATION
+		struct bmi_client_data *client_data = dev_get_drvdata(dev);
+		unsigned int timeout_shaking = 0;
+		int tilt_check_count = 0;
+		struct bmi160acc_t udata;
+		struct bmi160_axis_data_t bmi160_udata_pre;
+		struct bmi160_axis_data_t bmi160_udata;
+#endif
 
 	err = kstrtoul(buf, 10, &data);
 	if (err)
@@ -2143,6 +2269,69 @@ static ssize_t bmi160_acc_fast_calibration_z_store(struct device *dev,
 	if (data > 3)
 		return -EINVAL;
 
+#ifdef BMI160_CALIBRATION
+		atomic_set(&client_data->fast_calib_z_rslt, 0);
+
+		err = BMI_CALL_API(read_acc_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+		bmi160_udata_pre.x = udata.x;
+		bmi160_udata_pre.y = udata.y;
+		bmi160_udata_pre.z = udata.z;
+
+		bmi_remap_sensor_data(&bmi160_udata_pre, client_data);
+
+		/* Device is upside down */
+		if (bmi160_udata_pre.z < 0) {
+			dev_info(client_data->dev,"device is upside down. data : %d",bmi160_udata_pre.z);
+			return -EINVAL;
+		}
+		do{
+			mdelay(20);
+			err = BMI_CALL_API(read_acc_xyz)(&udata);
+			if (err < 0)
+				return err;
+
+			bmi160_udata.x = udata.x;
+			bmi160_udata.y = udata.y;
+			bmi160_udata.z = udata.z;
+
+			bmi_remap_sensor_data(&bmi160_udata, client_data);
+
+			dev_info(client_data->dev,"===============moved z=============== timeout = %d",timeout_shaking);
+			dev_info(client_data->dev,"(%d, %d, %d) (%d, %d, %d)",
+				bmi160_udata_pre.x, bmi160_udata_pre.y, bmi160_udata_pre.z, bmi160_udata.x,bmi160_udata.y,bmi160_udata.z );
+
+			if((abs(bmi160_udata.x - bmi160_udata_pre.x) > BMI160_SHAKING_DETECT_THRESHOLD)
+				|| (abs((bmi160_udata.y - bmi160_udata_pre.y)) > BMI160_SHAKING_DETECT_THRESHOLD)
+				|| (abs((bmi160_udata.z - bmi160_udata_pre.z)) > BMI160_SHAKING_DETECT_THRESHOLD)) {
+					atomic_set(&client_data->fast_calib_rslt, 6);
+					dev_err(client_data->dev,"===============shaking z===============");
+					return -EINVAL;
+			}
+			else{
+				bmi160_udata_pre.x = bmi160_udata.x;
+				bmi160_udata_pre.y = bmi160_udata.y;
+				bmi160_udata_pre.z = bmi160_udata.z;
+				if (abs(bmi160_udata.y) > BMI160_FAST_CALIB_TILT_LIMIT
+					|| abs(bmi160_udata.x) > BMI160_FAST_CALIB_TILT_LIMIT)
+					tilt_check_count++;
+				if (tilt_check_count > 5) {
+					atomic_set(&client_data->fast_calib_rslt, 7);
+					dev_err(client_data->dev,"============tilted over 15 degree===========");
+					return -EINVAL;
+				}
+			}
+			timeout_shaking++;
+		}while(timeout_shaking < 10);
+		dev_info(client_data->dev,"===============complete shaking z check===============");
+#endif
+
+#ifdef BMI160_CALIBRATION
+			atomic_set(&client_data->fast_calib_z_rslt, 1);
+#endif
+
 	err = BMI_CALL_API(set_accel_foc_trigger)(Z_AXIS,
 			data, &accel_offset_z);
 	if (err)
@@ -2150,6 +2339,7 @@ static ssize_t bmi160_acc_fast_calibration_z_store(struct device *dev,
 
 	return count;
 }
+#endif
 
 static ssize_t bmi160_acc_offset_x_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -2360,12 +2550,31 @@ static ssize_t bmi160_step_counter_value_show(struct device *dev,
 {
 	s16 data;
 	int err;
+	static u16 last_stc_value = 0;
+
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
 
 	err = BMI_CALL_API(read_step_count)(&data);
 
 	if (err < 0)
 		return err;
-	return sprintf(buf, "%d\n", data);
+
+	if (data >= last_stc_value)
+	{
+		client_data->pedo_data.last_step_counter_value += (data - last_stc_value);
+		last_stc_value = data;
+	}
+	else
+	{
+		last_stc_value = data;
+	}
+
+
+
+
+
+	return sprintf(buf, "%d\n", client_data->pedo_data.last_step_counter_value);
 }
 
 static ssize_t bmi160_bmi_value_show(struct device *dev,
@@ -2592,6 +2801,7 @@ static ssize_t bmi160_gyro_op_mode_store(struct device *dev,
 	if (err)
 		return err;
 
+/*
 	mutex_lock(&client_data->mutex_op_mode);
 
 	if (op_mode < BMI_GYRO_PM_MAX) {
@@ -2624,6 +2834,8 @@ static ssize_t bmi160_gyro_op_mode_store(struct device *dev,
 	}
 
 	mutex_unlock(&client_data->mutex_op_mode);
+*/
+  err = bmi160_set_gyro_op_mode(client_data, op_mode);
 
 	if (err)
 		return err;
@@ -2726,15 +2938,29 @@ static ssize_t bmi160_gyro_odr_store(struct device *dev,
 static ssize_t bmi160_gyro_fast_calibration_en_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	unsigned char data;
-	int err;
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
 
-	err = BMI_CALL_API(get_foc_gyr_en)(&data);
+	return sprintf(buf, "%d\n", atomic_read(&client_data->gyro_fast_calib_rslt));
 
-	if (err < 0)
-		return err;
-	return sprintf(buf, "%d\n", data);
 }
+
+
+  static ssize_t bmi160_gyro_fast_calibration_result_store(struct device *dev,
+      struct device_attribute *attr, const char *buf, size_t count)
+  {
+  	unsigned long data;
+	  int err = 0;
+	  struct input_dev *input = to_input_dev(dev);
+	  struct bmi_client_data *client_data = input_get_drvdata(input);
+
+  	err = strict_strtoul(buf, 10, &data);
+	  if(err)
+	  	return err;
+
+	  atomic_set(&client_data->gyro_fast_calib_rslt, data);
+	  return count;
+  }
 
 static ssize_t bmi160_gyro_fast_calibration_en_store(struct device *dev,
 		struct device_attribute *attr,
@@ -2745,16 +2971,73 @@ static ssize_t bmi160_gyro_fast_calibration_en_store(struct device *dev,
 	s16 gyr_off_x;
 	s16 gyr_off_y;
 	s16 gyr_off_z;
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+	unsigned int timeout_shaking = 0;
+	struct bmi160gyro_t udata;
+	struct bmi160_axis_data_t bmi160_udata_pre;
+	struct bmi160_axis_data_t bmi160_udata;
+
 
 	err = kstrtoul(buf, 10, &enable);
 	if (err)
 		return err;
+
+		atomic_set(&client_data->gyro_fast_calib_rslt, 0);
+
+		err = BMI_CALL_API(read_gyro_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+		bmi160_udata_pre.x = udata.x;
+		bmi160_udata_pre.y = udata.y;
+		bmi160_udata_pre.z = udata.z;
+
+		bmi_remap_sensor_data(&bmi160_udata_pre, client_data);
+
+		do{
+			mdelay(20);
+			err = BMI_CALL_API(read_gyro_xyz)(&udata);
+			if (err < 0)
+				return err;
+
+			bmi160_udata.x = udata.x;
+			bmi160_udata.y = udata.y;
+			bmi160_udata.z = udata.z;
+
+			bmi_remap_sensor_data(&bmi160_udata, client_data);
+
+			dev_info(client_data->dev,"===============moved x=============== timeout = %d",timeout_shaking);
+			dev_info(client_data->dev,"(%d, %d, %d) (%d, %d, %d)",
+			bmi160_udata_pre.x, bmi160_udata_pre.y, bmi160_udata_pre.z, bmi160_udata.x,bmi160_udata.y,bmi160_udata.z );
+
+			if((abs(bmi160_udata.x - bmi160_udata_pre.x) > BMI160_GYRO_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.y - bmi160_udata_pre.y)) > BMI160_GYRO_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.z - bmi160_udata_pre.z)) > BMI160_GYRO_SHAKING_DETECT_THRESHOLD)) {
+				atomic_set(&client_data->gyro_fast_calib_rslt, 2);
+				dev_err(client_data->dev,"===============shaking x===============");
+				return -EINVAL;
+			}else {
+				bmi160_udata_pre.x = bmi160_udata.x;
+				bmi160_udata_pre.y = bmi160_udata.y;
+				bmi160_udata_pre.z = bmi160_udata.z;
+			}
+		timeout_shaking++;
+		}while(timeout_shaking < 10);
+		dev_info(client_data->dev,"===============complete shaking x check===============");
+		/*move to HAL.. atomic_set(&client_data->gyro_fast_calib_rslt, 1); */
 
 	err = BMI_CALL_API(set_foc_gyr_en)((u8)enable,
 				&gyr_off_x, &gyr_off_y, &gyr_off_z);
 
 	if (err < 0)
 		return -EIO;
+
+    printk(KERN_INFO "bmi160 BMI160_GYRO_CALIBRATION_DONE \n");
+    input_event(client_data->input, EV_MSC, INPUT_EVENT_FAST_GYRO_CALIB_DONE, 1);
+    input_sync(client_data->input);
+    dev_info(client_data->dev, "GYRO XYZ Calibration Success");
+
 	return count;
 }
 
@@ -3173,6 +3456,169 @@ static ssize_t bmi_register_store(struct device *dev,
 	return count;
 }
 
+#ifdef BMI160_CALIBRATION
+static ssize_t bmi160_run_fast_calibration_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	return sprintf(buf, "%d\n", atomic_read(&client_data->fast_calib_rslt));
+
+
+}
+
+static ssize_t bmi160_run_fast_calibration_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	unsigned long data;
+	int err = 0;
+	s8 accel_offset_x = 0;
+	s8 accel_offset_y = 0;
+	s8 accel_offset_z = 0;
+
+	struct bmi_client_data *client_data = dev_get_drvdata(dev);
+	unsigned int timeout_shaking = 0;
+	int tilt_check_count = 0;
+	struct bmi160acc_t udata;
+	struct bmi160_axis_data_t bmi160_udata_pre;
+	struct bmi160_axis_data_t bmi160_udata;
+
+	err = strict_strtoul(buf, 10, &data);
+	if(err)
+		return err;
+
+	atomic_set(&client_data->fast_calib_rslt, 0);
+
+	err = BMI_CALL_API(read_acc_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+	bmi160_udata_pre.x = udata.x;
+	bmi160_udata_pre.y = udata.y;
+	bmi160_udata_pre.z = udata.z;
+
+	bmi_remap_sensor_data(&bmi160_udata_pre, client_data);
+
+	/* Device is upside down */
+	if (bmi160_udata_pre.z < 0) {
+		dev_info(client_data->dev,"device is upside down. data : %d",bmi160_udata_pre.z);
+		return -EINVAL;
+	}
+	do{
+		mdelay(20);
+		err = BMI_CALL_API(read_acc_xyz)(&udata);
+		if (err < 0)
+			return err;
+
+		bmi160_udata.x = udata.x;
+		bmi160_udata.y = udata.y;
+		bmi160_udata.z = udata.z;
+
+		bmi_remap_sensor_data(&bmi160_udata, client_data);
+
+		dev_info(client_data->dev,"===============moved x, y, z=============== timeout = %d",timeout_shaking);
+		dev_info(client_data->dev,"(%d, %d, %d) (%d, %d, %d)",
+			bmi160_udata_pre.x, bmi160_udata_pre.y, bmi160_udata_pre.z, bmi160_udata.x,bmi160_udata.y,bmi160_udata.z );
+
+		if((abs(bmi160_udata.x - bmi160_udata_pre.x) > BMI160_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.y - bmi160_udata_pre.y)) > BMI160_SHAKING_DETECT_THRESHOLD)
+			|| (abs((bmi160_udata.z - bmi160_udata_pre.z)) > BMI160_SHAKING_DETECT_THRESHOLD)) {
+				atomic_set(&client_data->fast_calib_rslt, 10);
+				dev_err(client_data->dev,"===============shaking x, y, z===============");
+				return -EINVAL;
+		}
+		else{
+			bmi160_udata_pre.x = bmi160_udata.x;
+			bmi160_udata_pre.y = bmi160_udata.y;
+			bmi160_udata_pre.z = bmi160_udata.z;
+			if (abs(bmi160_udata.y) > BMI160_FAST_CALIB_TILT_LIMIT
+				|| abs(bmi160_udata.x) > BMI160_FAST_CALIB_TILT_LIMIT)
+				tilt_check_count++;
+			if (tilt_check_count > 5) {
+				atomic_set(&client_data->fast_calib_rslt, 11);
+				dev_err(client_data->dev,"============tilted over 15 degree===========");
+				return -EINVAL;
+			}
+		}
+		timeout_shaking++;
+	}while(timeout_shaking < 10);
+	dev_info(client_data->dev,"===============complete shaking x, y, z check===============");
+
+	err = BMI_CALL_API(set_accel_foc_trigger)(X_AXIS,
+				3, &accel_offset_x);
+	err = BMI_CALL_API(set_accel_foc_trigger)(Y_AXIS,
+				3, &accel_offset_y);
+	err = BMI_CALL_API(set_accel_foc_trigger)(Z_AXIS,
+				2, &accel_offset_z);
+	if (err)
+	{
+		dev_info(client_data->dev, "ACCEL XYZ Calibration Fail");
+		return -EIO;
+	}
+
+	printk(KERN_INFO "bmi160 BMI160_ACCEL_CALIBRATION_DONE\n");
+	input_event(client_data->input, EV_MSC, INPUT_EVENT_FAST_ACC_CALIB_DONE, 1);
+	input_sync(client_data->input);
+	dev_info(client_data->dev, "ACCEL XYZ Calibration Success");
+
+	return count;
+}
+
+static ssize_t bmi160_fast_calibration_result_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	unsigned long data;
+	int err = 0;
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	err = strict_strtoul(buf, 10, &data);
+	if(err)
+		return err;
+
+	atomic_set(&client_data->fast_calib_rslt, data);
+	return count;
+}
+
+static ssize_t bmi160_eeprom_writing_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+
+	return sprintf(buf, "%d\n", atomic_read(&client_data->fast_calib_rslt));
+
+
+}
+
+static ssize_t bmi160_eeprom_writing_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct input_dev *input = to_input_dev(dev);
+	struct bmi_client_data *client_data = input_get_drvdata(input);
+	atomic_set(&client_data->fast_calib_rslt, 0);
+
+	if (atomic_read(&client_data->fast_calib_x_rslt) == 1 &&
+		atomic_read(&client_data->fast_calib_y_rslt) == 1 &&
+		atomic_read(&client_data->fast_calib_z_rslt) == 1) {
+
+		printk(KERN_INFO "bmi160 BMI160_ACCEL_CALIBRATION_DONE\n");
+		input_event(client_data->input, EV_MSC, INPUT_EVENT_FAST_ACC_CALIB_DONE, 1);
+		input_sync(client_data->input);
+
+		dev_info(client_data->dev, "ACCEL XYZ Calibration Success");
+	}else {
+		dev_info(client_data->dev, "XYZ Calibration Failed");
+		return atomic_read(&client_data->fast_calib_rslt);
+	}
+
+	return count;
+}
+#endif
 static DEVICE_ATTR(chip_id, S_IRUGO,
 		bmi160_chip_id_show, NULL);
 static DEVICE_ATTR(err_st, S_IRUGO,
@@ -3220,15 +3666,17 @@ static DEVICE_ATTR(acc_op_mode, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 		bmi160_acc_op_mode_show, bmi160_acc_op_mode_store);
 static DEVICE_ATTR(acc_value, S_IRUGO,
 		bmi160_acc_value_show, NULL);
-static DEVICE_ATTR(acc_fast_calibration_x, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+#ifdef BMI160_CALIBRATION
+static DEVICE_ATTR(fast_calibration_x, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 		bmi160_acc_fast_calibration_x_show,
 		bmi160_acc_fast_calibration_x_store);
-static DEVICE_ATTR(acc_fast_calibration_y, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+static DEVICE_ATTR(fast_calibration_y, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 		bmi160_acc_fast_calibration_y_show,
 		bmi160_acc_fast_calibration_y_store);
-static DEVICE_ATTR(acc_fast_calibration_z, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+static DEVICE_ATTR(fast_calibration_z, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 		bmi160_acc_fast_calibration_z_show,
 		bmi160_acc_fast_calibration_z_store);
+#endif
 static DEVICE_ATTR(acc_offset_x, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 		bmi160_acc_offset_x_show,
 		bmi160_acc_offset_x_store);
@@ -3309,6 +3757,16 @@ static DEVICE_ATTR(register, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
 static DEVICE_ATTR(bmi_value, S_IRUGO,
 		bmi160_bmi_value_show, NULL);
 
+#ifdef BMI160_CALIBRATION
+static DEVICE_ATTR(run_calibration, S_IRUGO|S_IWUSR|S_IWGRP,
+		bmi160_eeprom_writing_show, bmi160_eeprom_writing_store);
+static DEVICE_ATTR(fast_calibration_result, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+        NULL, bmi160_fast_calibration_result_store);
+static DEVICE_ATTR(gyro_fast_calibration_result, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+        NULL, bmi160_gyro_fast_calibration_result_store);
+static DEVICE_ATTR(run_fast_calibration, S_IRUGO|S_IWUSR|S_IWGRP|S_IWOTH,
+        bmi160_run_fast_calibration_show, bmi160_run_fast_calibration_store);
+#endif
 
 static struct attribute *bmi160_attributes[] = {
 	&dev_attr_chip_id.attr,
@@ -3338,9 +3796,11 @@ static struct attribute *bmi160_attributes[] = {
 	&dev_attr_acc_op_mode.attr,
 	&dev_attr_acc_value.attr,
 
-	&dev_attr_acc_fast_calibration_x.attr,
-	&dev_attr_acc_fast_calibration_y.attr,
-	&dev_attr_acc_fast_calibration_z.attr,
+#ifdef BMI160_CALIBRATION
+	&dev_attr_fast_calibration_x.attr,
+	&dev_attr_fast_calibration_y.attr,
+	&dev_attr_fast_calibration_z.attr,
+#endif
 	&dev_attr_acc_offset_x.attr,
 	&dev_attr_acc_offset_y.attr,
 	&dev_attr_acc_offset_z.attr,
@@ -3380,6 +3840,12 @@ static struct attribute *bmi160_attributes[] = {
 #endif
 	&dev_attr_register.attr,
 	&dev_attr_bmi_value.attr,
+#ifdef BMI160_CALIBRATION
+	&dev_attr_run_calibration.attr,
+	&dev_attr_fast_calibration_result.attr,
+	&dev_attr_gyro_fast_calibration_result.attr,
+	&dev_attr_run_fast_calibration.attr,
+#endif
 	NULL
 };
 
@@ -3494,12 +3960,20 @@ static void bmi_signification_motion_interrupt_handle(
 static void bmi_stepdetector_interrupt_handle(
 	struct bmi_client_data *client_data)
 {
-	printk(KERN_INFO "bmi_stepdetector_interrupt_handle\n");
 /*
 	input_report_rel(client_data->input,INPUT_EVENT_STEP_DETECTOR,1);
 	input_sync(client_data->input);
 */
-	client_data->std = 1;
+	u8 current_step_dector_st = 0;
+	client_data->pedo_data.wkar_step_detector_status++;
+	current_step_dector_st = client_data->pedo_data.wkar_step_detector_status;
+
+	printk("interrupt step detector:%d,%d\n", client_data->pedo_data.wkar_step_detector_status, current_step_dector_st);
+	client_data->std = ((current_step_dector_st == 1)? 0: 1);
+	if (client_data->std == 1)
+		printk(KERN_INFO "bmi_stepdetector_interrupt_handle, times:%d\n",
+					current_step_dector_st);
+
 }
 
 static void bmi_irq_work_func(struct work_struct *work)
@@ -3545,6 +4019,46 @@ static irqreturn_t bmi_irq_handler(int irq, void *handle)
 	return IRQ_HANDLED;
 }
 #endif /* defined(BMI_ENABLE_INT1)||defined(BMI_ENABLE_INT2) */
+
+
+
+
+#ifdef BMI_CAL_MSG_UEVENT
+static int bmi_cal_msg_init(void) {
+
+	struct bmi_cal_obj *bmi;
+	int retval;
+	bmi_sensor_cal_kset = kset_create_and_add("bmi_sensor_cal", NULL, kernel_kobj);
+
+	if (!bmi_sensor_cal_kset)
+		return -ENOMEM;
+
+	bmi = kzalloc(sizeof(*bmi), GFP_KERNEL);
+	if (!bmi)
+		return -ENOMEM;
+
+	bmi->kobj.kset = bmi_sensor_cal_kset;
+	g_bmi_cal_obj = bmi;
+
+	retval = kobject_init_and_add(&bmi->kobj, &bmi_ktype, NULL, "%s", "bmi_sensor_cal");
+	if (retval) {
+		kobject_put(&bmi->kobj);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+
+static int bmi_cal_msg_deinit(void) {
+	destroy_bmi_obj(g_bmi_cal_obj);
+	kset_unregister(bmi_sensor_cal_kset);
+	return 0;
+}
+
+
+#endif
+
 
 int bmi_probe(struct bmi_client_data *client_data, struct device *dev)
 {
@@ -3598,7 +4112,9 @@ int bmi_probe(struct bmi_client_data *client_data, struct device *dev)
 					client_data->bst_pd->name,
 					client_data->bst_pd->place);
 		}
-
+#ifdef BMI_CAL_MSG_UEVENT
+	bmi_cal_msg_init();
+#endif
 
 	/* workqueue init */
 	INIT_DELAYED_WORK(&client_data->work, bmi_work_func);
@@ -3756,6 +4272,11 @@ int bmi_remove(struct device *dev)
 	int err = 0;
 	struct bmi_client_data *client_data = dev_get_drvdata(dev);
 
+#ifdef BMI_CAL_MSG_UEVENT
+	bmi_cal_msg_deinit();
+#endif
+
+
 	if (NULL != client_data) {
 #ifdef CONFIG_HAS_EARLYSUSPEND
 		unregister_early_suspend(&client_data->early_suspend_handler);
@@ -3793,12 +4314,22 @@ static int bmi_post_resume(struct bmi_client_data *client_data)
 
 	mutex_lock(&client_data->mutex_enable);
 
-	if (atomic_read(&client_data->wkqueue_en) == 1) {
+	if (atomic_read(&client_data->acc_wkqueue_en) == 1) {
+	  dev_info(client_data->dev, "acc_wkqueue_en is 1");
 		bmi160_set_acc_op_mode(client_data, BMI_ACC_PM_NORMAL);
 		schedule_delayed_work(&client_data->work,
 				msecs_to_jiffies(
 					atomic_read(&client_data->delay)));
 	}
+
+  if (atomic_read(&client_data->gyro_wkqueue_en) == 1) {
+      dev_info(client_data->dev, "gyro_wkqueue_en is 1");
+      bmi160_set_gyro_op_mode(client_data, BMI_GYRO_PM_NORMAL);
+      schedule_delayed_work(&client_data->work,
+          msecs_to_jiffies(
+            atomic_read(&client_data->delay)));
+  }
+	
 	mutex_unlock(&client_data->mutex_enable);
 
 	return err;
@@ -3813,10 +4344,18 @@ int bmi_suspend(struct device *dev)
 	dev_err(client_data->dev, "bmi suspend function entrance");
 
 
-	if (atomic_read(&client_data->wkqueue_en) == 1) {
+	if (atomic_read(&client_data->acc_wkqueue_en) == 1) {
+	  dev_info(client_data->dev, "acc_wkqueue_en is 1");
 		bmi160_set_acc_op_mode(client_data, BMI_ACC_PM_SUSPEND);
 		cancel_delayed_work_sync(&client_data->work);
 	}
+
+  if (atomic_read(&client_data->gyro_wkqueue_en) == 1) {
+    dev_info(client_data->dev, "gyro_wkqueue_en is 1");
+    bmi160_set_gyro_op_mode(client_data, BMI_GYRO_PM_SUSPEND);
+    cancel_delayed_work_sync(&client_data->work);
+  }
+	
 	BMI_CALL_API(get_step_counter_enable)(&stc_enable);
 
 	if (client_data->pw.acc_pm != BMI_ACC_PM_SUSPEND && (stc_enable != 1)) {
@@ -3853,4 +4392,6 @@ int bmi_resume(struct device *dev)
 	return err;
 }
 EXPORT_SYMBOL(bmi_resume);
+
+
 

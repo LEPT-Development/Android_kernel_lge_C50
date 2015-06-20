@@ -25,6 +25,18 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 #ifdef CONFIG_COMPAT
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
+
+#if defined(CONFIG_MACH_LGE)
+/*                                                            */
+#include <linux/device.h>
+
+#define MODULE_VENDOR_ID 0x700
+
+static struct class *camera_vendor_id_class = NULL;
+static int8_t main_sensor_id = -1;
+/*                                                            */
+#endif
+
 /**
   * msm_eeprom_verify_sum - verify crc32 checksum
   * @mem:	data buffer
@@ -1515,6 +1527,12 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	}
 #else
 	rc = msm_eeprom_checksum(e_ctrl);
+#if defined(CONFIG_MACH_LGE)
+	if(!rc) {
+		main_sensor_id = e_ctrl->cal_data.mapdata[MODULE_VENDOR_ID];
+		pr_info("%s:main_sensor_id 0x%x\n", __func__, main_sensor_id);
+	}
+#endif
 #endif
 	//                                                                      
 
@@ -1562,6 +1580,46 @@ cciclient_free:
 	kfree(e_ctrl);
 	return rc;
 }
+
+#if defined(CONFIG_MACH_LGE)
+/*                                                            */
+static ssize_t show_LGCameraMainID(struct device *dev,struct device_attribute *attr, char *buf)
+{
+	pr_err("show_LGCameraMainID: main_camera_id [%d] \n", main_sensor_id);
+	switch (main_sensor_id) {
+		case 0x01:
+		case 0x02:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "LGIT");
+		case 0x03:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "Fujifilm");
+		case 0x04:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "Minolta");
+		case 0x10:
+		case 0x11:
+		case 0x12:
+		case 0x13:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "Cowell");
+		case 0x14:
+		case 0x15:
+		case 0x16:
+		case 0x17:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "IM-tech");
+		case 0x20:
+		case 0x21:
+		case 0x22:
+		case 0x23:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "Sunny");
+		default:
+			return sprintf(buf, "id:0x%x, %s\n", main_sensor_id, "Reserved for future");
+	}
+}
+
+static DEVICE_ATTR(vendor_id, S_IRUGO, show_LGCameraMainID, NULL);
+/*                                                            */
+#endif
 
 static int msm_eeprom_platform_remove(struct platform_device *pdev)
 {
@@ -1632,18 +1690,42 @@ static struct spi_driver msm_eeprom_spi_driver = {
 static int __init msm_eeprom_init_module(void)
 {
 	int rc = 0;
+
+#if defined(CONFIG_MACH_LGE)
+/*                                                            */
+	struct device*  camera_vendor_id_dev;
+/*                                                            */
+#endif
+
 	CDBG("%s E\n", __func__);
 	rc = platform_driver_probe(&msm_eeprom_platform_driver,
 		msm_eeprom_platform_probe);
 	CDBG("%s:%d platform rc %d\n", __func__, __LINE__, rc);
 	rc = spi_register_driver(&msm_eeprom_spi_driver);
 	CDBG("%s:%d spi rc %d\n", __func__, __LINE__, rc);
+
+#if defined(CONFIG_MACH_LGE)
+/*                                                            */
+	camera_vendor_id_class = class_create(THIS_MODULE, "camera");
+	camera_vendor_id_dev = device_create(camera_vendor_id_class, NULL,
+		0, NULL, "vendor_id");
+	device_create_file(camera_vendor_id_dev, &dev_attr_vendor_id);
+/*                                                           */
+#endif
+
 	return i2c_add_driver(&msm_eeprom_i2c_driver);
 }
 
 static void __exit msm_eeprom_exit_module(void)
 {
 	platform_driver_unregister(&msm_eeprom_platform_driver);
+
+#if defined(CONFIG_MACH_LGE)
+/*                                                            */
+	class_destroy(camera_vendor_id_class);
+/*                                                            */
+#endif
+
 	spi_unregister_driver(&msm_eeprom_spi_driver);
 	i2c_del_driver(&msm_eeprom_i2c_driver);
 }

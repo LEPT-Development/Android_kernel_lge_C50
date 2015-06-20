@@ -79,11 +79,9 @@
 		Rohm,infrared_level = <0>;
 		Rohm,ps_gain = <1>;
 		Rohm,persistence = <2>;
-		Rohm,near_offset = <16>;
-		Rohm,far_offset = <4>;
-		Rohm,bright_threshold = <10>;
-		Rohm,dark_threshold = <5>;
-		Rohm,default_cross_talk = <50>;
+		Rohm,near_offset = <40>;
+		Rohm,far_offset = <10>;
+		Rohm,default_cross_talk = <9>;
 	};
 
 	k2dh0@18 {

@@ -194,6 +194,14 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 	CDBG("%s qcom,mclk-23880000 %d\n", __func__,
 		s_ctrl->set_mclk_23880000);
 
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+	// optional property, don't return error if absent
+	ret = of_property_read_string(of_node, "lge,vcm-pwdn",
+		&s_ctrl->vcm_pwdn);
+	CDBG("%s lge,vcm-pwdn %s, rc %d\n", __func__,
+			s_ctrl->vcm_pwdn, ret);
+#endif
+
 	rc = msm_sensor_get_dt_csi_data(of_node, &sensordata->csi_lane_params);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
@@ -505,8 +513,115 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	}
 
 	return rc;
-
 }
+
+//                                                                                
+#if (SUPPORT_HI841_SENSOR == 1)
+static struct msm_camera_i2c_reg_array hynix_841_init_i2c_block[] = {
+	{0x8408,0x0a},
+	{0x0103,0x01},
+	{0x0103,0x00},
+	{0x8400,0x03},
+};
+#endif
+//
+
+//                                                                                      
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+
+static struct msm_camera_i2c_reg_array vcm_pwdn[] = {
+	{0x80, 0x00}, //DW9716
+	{0x00, 0x01}, //DW9718
+	{0x40, 0x81}, //WV517
+};
+
+int msm_actuator_pwdn_mode (struct msm_sensor_ctrl_t *s_ctrl)
+{
+	struct msm_camera_i2c_client*     sensor_i2c_client;
+	struct msm_camera_i2c_reg_setting pwdn_array;
+	uint16_t sid_temp = 0;
+	int32_t rc = 0 ;
+
+	pr_err(">> %s START\n", __func__);
+
+	//////////////////////////////////////////////////////////
+	// A. Check input variables & conditions
+	//////////////////////////////////////////////////////////
+	if (!s_ctrl) {
+		pr_err("<< %s END (rc: -EINVAL) @Line: %d\n", __func__, __LINE__);
+		return -EINVAL;
+	}
+
+	sensor_i2c_client = s_ctrl->sensor_i2c_client;
+
+	if (!sensor_i2c_client) {
+		pr_err("<< %s END (rc: -EINVAL) @Line: %d\n", __func__, __LINE__);
+		return -EINVAL;
+	}
+
+	pr_err("[CHECK] s_ctrl->sensordata->sensor_info->position: %d\n",
+			s_ctrl->sensordata->sensor_info->position);
+	pr_err("[CHECK] s_ctrl->vcm_pwdn: %s\n", s_ctrl->vcm_pwdn);
+
+	// check if (Main camera module's actuator)
+	if (s_ctrl->sensordata->sensor_info->position != 0) {
+		pr_err("<< %s END (rc: 0) @Line: %d\n", __func__, __LINE__);
+		return 0;
+	}
+
+	// check if (Actuator Power Down setting exists)
+	if (!s_ctrl->vcm_pwdn) {
+		pr_err("<< %s END (rc: 0) @Line: %d\n", __func__, __LINE__);
+		return 0;
+	}
+
+	//////////////////////////////////////////////////////////
+	// B. Actuator PowerDown Mode Enable!
+	//////////////////////////////////////////////////////////
+
+	//1. Select: Actuator PWDN Register Setting
+	pwdn_array.addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
+	pwdn_array.data_type = MSM_CAMERA_I2C_BYTE_DATA;
+	pwdn_array.delay = 0;
+	pwdn_array.size = 1;
+
+	if (!strcmp(s_ctrl->vcm_pwdn, "dw9716")) {
+		pwdn_array.reg_setting = &(vcm_pwdn[0]);
+	}
+	else if (!strcmp(s_ctrl->vcm_pwdn, "dw9718")) {
+		pwdn_array.reg_setting = &(vcm_pwdn[1]);
+	}
+	else if (!strcmp(s_ctrl->vcm_pwdn, "wv517")) {
+		pwdn_array.reg_setting = &(vcm_pwdn[2]);
+	}
+	else {
+		pr_err("error: invalid vcm_pwdn mode: %s\n", s_ctrl->vcm_pwdn);
+		pr_err("<< %s END (rc: -EINVAL) @Line: %d\n", __func__, __LINE__);
+		return -EINVAL;
+	}
+
+	//2. Save: Sensor SlaveAddr.
+	sid_temp = sensor_i2c_client->cci_client->sid;
+	CDBG("[CHECK] save sensor sid: %d\n", sid_temp);
+
+	//3. Change: (from) Sensor SlaveAddr -> (to) Actuator SlaveAddr.
+	sensor_i2c_client->cci_client->sid = (0x18 >> 1);
+	CDBG("[CHECK] set actuator sid: %d\n", sensor_i2c_client->cci_client->sid);
+
+	//4. I2C Write: Actuator PWDN active (meaning: No Leakage)
+	pr_err("[CHECK] Actuator Power Down High (No Leakage) START\n");
+
+	rc = sensor_i2c_client->i2c_func_tbl->i2c_write_table(sensor_i2c_client, &pwdn_array);
+	pr_err("[CHECK] Actuator Power Down High (No Leakage) END (rc: %d)\n", rc);
+
+	//5. Restore: (from) Actuator SlaveAddr. -> (to) Sensor SlaveAddr
+	sensor_i2c_client->cci_client->sid = sid_temp;
+	CDBG("[CHECK] restore sensor sid: %d\n", sensor_i2c_client->cci_client->sid);
+
+	pr_err("<< %s END (rc: %d) @Line: %d\n", __func__, rc, __LINE__);
+	return rc;
+}
+#endif
 
 int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -515,6 +630,11 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_slave_info *slave_info;
 	const char *sensor_name;
+
+#if (SUPPORT_HI841_SENSOR == 1)
+	int32_t write_rc = 0 ;
+	struct msm_camera_i2c_reg_setting hi841_boot_array;
+#endif
 
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %p\n",
@@ -532,6 +652,17 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+#if (SUPPORT_HI841_SENSOR == 1)
+	if (!strcmp(sensor_name, "hi841")) {
+		hi841_boot_array.reg_setting = &(hynix_841_init_i2c_block[0]);
+		hi841_boot_array.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+		hi841_boot_array.data_type = MSM_CAMERA_I2C_BYTE_DATA;
+		hi841_boot_array.delay = 0;
+		hi841_boot_array.size = 4;
+		write_rc = sensor_i2c_client->i2c_func_tbl->i2c_write_table(sensor_i2c_client, &hi841_boot_array);
+	}
+#endif
+
 	rc = sensor_i2c_client->i2c_func_tbl->i2c_read(
 		sensor_i2c_client, slave_info->sensor_id_reg_addr,
 		&chipid, MSM_CAMERA_I2C_WORD_DATA);
@@ -546,6 +677,8 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("msm_sensor_match_id chip id doesnot match\n");
 		return -ENODEV;
 	}
+
+	pr_err("%s:%d success!\n", __func__, __LINE__);
 	return rc;
 }
 
@@ -1445,6 +1578,7 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 	struct msm_camera_cci_client *cci_client = NULL;
 	uint32_t session_id;
 	unsigned long mount_pos = 0;
+
 	s_ctrl->pdev = pdev;
 	CDBG("%s called data %p\n", __func__, data);
 	CDBG("%s pdev name %s\n", __func__, pdev->id_entry->name);
@@ -1532,6 +1666,10 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 		&msm_sensor_v4l2_subdev_fops;
 
 	CDBG("%s:%d\n", __func__, __LINE__);
+
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+	msm_actuator_pwdn_mode(s_ctrl);
+#endif
 
 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
 	CDBG("%s:%d\n", __func__, __LINE__);

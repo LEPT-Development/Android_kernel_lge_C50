@@ -1528,7 +1528,6 @@ static enum power_supply_property bq24296_batt_power_props[] = {
 #ifdef CONFIG_LGE_PM_FACTORY_TESTMODE
 	POWER_SUPPLY_PROP_HW_REV,
 #endif
-	POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER,
 #if defined(CONFIG_LGE_PM_LLK_MODE)
 	POWER_SUPPLY_PROP_STORE_DEMO_ENABLED,
 #endif
@@ -1918,21 +1917,6 @@ static int bq24296_batt_power_get_property(struct power_supply *psy,
 		val->strval = buf;
 		break;
 #endif
-
-	case POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER:
-	{
-		int ret;
-		u8 value = 0;
-		ret = bq24296_read_reg(chip->client, BQ05_CHARGE_TERM_TIMER_CONT_REG, &value);
-		if (ret) {
-			pr_err("failed to read BQ05_CHARGE_TERM_TIMER_CONT_REG ret=%d\n", ret);
-			return -EINVAL;
-		}
-		val->intval = (value >> 3) & 0x01;
-		pr_info("get charger_timeout : %d[D]\n", val->intval);
-	}
-		break;
-
 #if defined(CONFIG_LGE_PM_LLK_MODE)
 	case POWER_SUPPLY_PROP_STORE_DEMO_ENABLED:
 		val->intval = chip->store_demo_enabled;
@@ -2004,14 +1988,6 @@ static int bq24296_batt_power_set_property(struct power_supply *psy,
 		chip->store_demo_enabled = val->intval;
 		break;
 #endif
-
-	case POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER:
-#if !defined(CONFIG_CHARGER_FACTORY_MODE)
-		bq24296_set_chg_timer(chip, ((val->intval == 0) ? false : true));
-		pr_info("charger_timeout : %d[D]\n", val->intval);
-#endif
-		break;
-
 	default:
 		return -EINVAL;
 	}
@@ -2135,7 +2111,8 @@ static void bq24296_wlc_otg_fake_proc(struct bq24296_chip *chip)
 }
 #endif
 
-#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM)
+#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) && \
+	!defined (CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) && !defined (CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 static void bq24296_decide_otg_mode(struct bq24296_chip *chip)
 {
 	union power_supply_propval ret = {0,};
@@ -2323,7 +2300,8 @@ static void bq24296_batt_external_power_changed(struct power_supply *psy)
 	chip->usb_psy = _psy_check_ext(chip->usb_psy, _USB_);
 	NULL_CHECK_VOID(chip->usb_psy);
 
-#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM)
+#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) && \
+	!defined (CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) && !defined (CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 	bq24296_decide_otg_mode(chip);
 #endif
 	/* 2 steps lower in case of factory cable */
@@ -3030,7 +3008,8 @@ static void bq24296_monitor_batt_temp(struct work_struct *work)
 			bq24296_enable_charging(chip, !res.disable_chg);
 			wake_unlock(&chip->lcs_wake_lock);
 		}
-#if defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM)
+#if defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+	defined (CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || defined (CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 		else if (res.change_lvl == STS_CHE_STPCHG_TO_DECCUR) {
 			chip->otp_ibat_current = res.dc_current;
 			wake_unlock(&chip->lcs_wake_lock);

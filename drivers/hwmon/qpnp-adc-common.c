@@ -45,8 +45,7 @@
    their framework which is 0.1DegC. True resolution of 0.1DegC
    will result in the below table size to increase by 10 times */
 #ifdef CONFIG_LGE_PM
-#if defined(CONFIG_MACH_MSM8916_C70N_GLOBAL_COM) || defined (CONFIG_MACH_MSM8916_C70DS_GLOBAL_COM) || \
-defined (CONFIG_MACH_MSM8916_C70_GLOBAL_COM) || defined (CONFIG_MACH_MSM8916_C70W_KR)
+#if defined(CONFIG_MACH_MSM8916_C70N_GLOBAL_COM) || defined (CONFIG_MACH_MSM8916_C70DS_GLOBAL_COM) || defined (CONFIG_MACH_MSM8916_C70_GLOBAL_COM)
 static const struct qpnp_vadc_map_pt adcmap_btm_threshold[] = {
 	{-300,	1589},
 	{-200,	1468},
@@ -226,7 +225,6 @@ static const struct qpnp_vadc_map_pt adcmap_btm_threshold[] = {
 };
 #elif defined(CONFIG_MACH_MSM8916_STYLUSC_SPR_US) || \
       defined(CONFIG_MACH_MSM8916_G4STYLUSDSN_GLOBAL_COM) || \
-      defined(CONFIG_MACH_MSM8916_G4STYLUSDS_GLOBAL_COM) || \
       defined(CONFIG_MACH_MSM8916_G4STYLUSN_GLOBAL_COM)
 static const struct qpnp_vadc_map_pt adcmap_btm_threshold[] = {
 	{-400,	1708},

@@ -1,7 +1,8 @@
 #ifndef __ASM_ARCH_MSM_BOARD_LGE_H
 #define __ASM_ARCH_MSM_BOARD_LGE_H
 
-#if defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+#if defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 typedef enum {
 	HW_REV_0 = 0,
 	HW_REV_A,
@@ -83,6 +84,7 @@ struct kcal_platform_data {
 #endif
 #if defined(CONFIG_PRE_SELF_DIAGNOSIS)
 int lge_pre_self_diagnosis(char *drv_bus_code, int func_code, char *dev_code, char *drv_code, int errno);
+int lge_pre_self_diagnosis_pass(char *dev_code);
 #endif
 #if defined(CONFIG_PRE_SELF_DIAGNOSIS)
 struct pre_selfd_platform_data {
@@ -120,7 +122,8 @@ enum lge_laf_mode_type lge_get_laf_mode(void);
 #if defined(CONFIG_LCD_KCAL)
 void __init lge_add_lcd_kcal_devices(void);
 #endif
-#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && defined(CONFIG_LGE_QFPROM_INTERFACE) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && defined(CONFIG_LGE_QFPROM_INTERFACE) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)  && !defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) && \
+	!defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) && !defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 void __init lge_add_qfprom_devices(void);
 #endif
 #if defined(CONFIG_LGE_DIAG_USB_ACCESS_LOCK) || defined(CONFIG_LGE_DIAG_ENABLE_SYSFS)

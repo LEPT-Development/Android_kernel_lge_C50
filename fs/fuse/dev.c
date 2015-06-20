@@ -1845,7 +1845,7 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 		request_end(fc, req);
 		return -ENOENT;
 	}
-#if defined(CONFIG_MACH_MSM8916_C70W_KR) || defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR) || defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
+#if defined(CONFIG_MACH_MSM8916_YG_SKT_KR)
 	if (oh.error == -EROFS)
 	{
 	    fc->sb->s_flags |= MS_RDONLY;

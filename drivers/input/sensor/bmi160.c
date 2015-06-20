@@ -6676,6 +6676,13 @@ u8 enable, u8 *int_en_2)
 			*int_en_2 = BMI160_GET_BITSLICE(v_data_u8r,
 			BMI160_USER_INT_EN_2_NOMO_Z_EN);
 			break;
+		case BMI160_STEP_DETECTOR_EN:
+			comres += p_bmi160->BMI160_BUS_READ_FUNC(p_bmi160->
+			dev_addr, BMI160_USER_INT_EN_2_STEP_DET_EN__REG,
+			&v_data_u8r, 1);
+			*int_en_2 = BMI160_GET_BITSLICE(v_data_u8r,
+			BMI160_USER_INT_EN_2_STEP_DET_EN);
+			break;
 		default:
 			comres = E_BMI160_OUT_OF_RANGE;
 			break;
@@ -6764,6 +6771,19 @@ u8 enable, u8 int_en_2)
 				comres +=
 				p_bmi160->BMI160_BUS_WRITE_FUNC(p_bmi160->
 				dev_addr, BMI160_USER_INT_EN_2_NOMO_Z_EN__REG,
+				&v_data_u8r, 1);
+			}
+			break;
+		case BMI160_STEP_DETECTOR_EN:
+			comres += p_bmi160->BMI160_BUS_READ_FUNC(p_bmi160->
+			dev_addr, BMI160_USER_INT_EN_2_STEP_DET_EN__REG,
+			&v_data_u8r, 1);
+			if (comres == SUCCESS) {
+				v_data_u8r = BMI160_SET_BITSLICE(v_data_u8r,
+				BMI160_USER_INT_EN_2_STEP_DET_EN, int_en_2);
+				comres +=
+				p_bmi160->BMI160_BUS_WRITE_FUNC(p_bmi160->
+				dev_addr, BMI160_USER_INT_EN_2_STEP_DET_EN__REG,
 				&v_data_u8r, 1);
 			}
 			break;
@@ -16801,6 +16821,7 @@ BMI160_RETURN_FUNCTION_TYPE bmi160_mag_compensate_xyz_raw(
 struct bmi160_mag_xyz *mag_comp_xyz, struct bmi160mag_t mag_xyzr)
 {
 	BMI160_RETURN_FUNCTION_TYPE comres = C_BMI160_ZERO_U8X;
+#ifdef BMI160_MAG_INTERFACE_SUPPORT
 	/* Compensation for X axis */
 	mag_comp_xyz->x = bmi160_mag_compensate_X(mag_xyzr.x, mag_xyzr.r);
 
@@ -16809,7 +16830,7 @@ struct bmi160_mag_xyz *mag_comp_xyz, struct bmi160mag_t mag_xyzr)
 
 	/* Compensation for Z axis */
 	mag_comp_xyz->z = bmi160_mag_compensate_Z(mag_xyzr.z, mag_xyzr.r);
-
+#endif
 	return comres;
 }
 

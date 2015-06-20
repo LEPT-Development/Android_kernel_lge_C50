@@ -2152,6 +2152,8 @@ BMI160_USER_STEP_CONF_1_ADDR
 #define  BMI160_NOMOTION_X_EN	0
 #define  BMI160_NOMOTION_Y_EN	1
 #define  BMI160_NOMOTION_Z_EN	2
+#define  BMI160_STEP_DETECTOR_EN	3
+
 
 /* FOC axis selection for accel*/
 #define	FOC_X_AXIS		0

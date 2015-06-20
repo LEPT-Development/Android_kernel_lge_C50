@@ -132,8 +132,7 @@
 #define QPNP_VM_BMS_DEV_NAME		"qcom,qpnp-vm-bms"
 #if defined (CONFIG_MACH_MSM8916_C70_GLOBAL_COM) || \
     defined (CONFIG_MACH_MSM8916_C70N_GLOBAL_COM) || \
-    defined (CONFIG_MACH_MSM8916_C70DS_GLOBAL_COM) || \
-    defined (CONFIG_MACH_MSM8916_C70W_KR)
+    defined (CONFIG_MACH_MSM8916_C70DS_GLOBAL_COM)
 #define EOC_SOC_LEVEL	98
 #else
 #define EOC_SOC_LEVEL	100
@@ -313,6 +312,14 @@ static void disable_bms_irq(struct bms_irq *irq)
 	if (!__test_and_set_bit(0, &irq->disabled)) {
 		disable_irq(irq->irq);
 		pr_debug("disabled irq %d\n", irq->irq);
+	}
+}
+
+static void enable_bms_irq(struct bms_irq *irq)
+{
+	if (__test_and_clear_bit(0, &irq->disabled)) {
+		enable_irq(irq->irq);
+		pr_debug("enable irq %d\n", irq->irq);
 	}
 }
 
@@ -3501,6 +3508,29 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 					"Using default profile - "\
 					"LGChem_2540mAh for id(%lld)\n", battery_id);
 			break;
+#elif defined(CONFIG_LGE_PM_BATTERY_CAPACITY_4V4_2300mAh)
+                case BATT_ID_RA4301_VC1 :
+                case BATT_ID_SW3800_VC0 :
+                        battery_profile = "qcom,lgc-battery-data";
+                        pr_info("[BATTERY PROFILE] Using battery profile - LGChem_2300mAh for id(%lld)\n",battery_id);
+                        break;
+                case BATT_ID_RA4301_VC0 :
+                case BATT_ID_SW3800_VC1 :
+                        battery_profile = "qcom,tocad-battery-data";
+                        pr_info("[BATTERY PROFILE] Using battery profile - Tocad_2300mAh for id(%lld)\n",battery_id);
+                        break;
+                case BATT_ID_DS2704_N :
+                case BATT_ID_DS2704_L :
+                case BATT_ID_DS2704_C :
+                case BATT_ID_ISL6296_N :
+                case BATT_ID_ISL6296_L :
+                case BATT_ID_ISL6296_C :
+                case BATT_ID_RA4301_VC2 :
+                case BATT_ID_SW3800_VC2 :
+                default :
+                        battery_profile = "qcom,lgc-battery-data";
+                        pr_info("[BATTERY PROFILE] No battery ID matching\nUsing default profile - LGChem_2300mAh for id(%lld)\n",battery_id);
+                        break;
 #else
 		case BATT_ID_RA4301_VC1 :
 		case BATT_ID_SW3800_VC0 :
@@ -4038,8 +4068,16 @@ static int qpnp_vm_bms_probe(struct spmi_device *spmi)
 	 * has registered. Fall-back to voltage-based-soc reporting
 	 * if it has not.
 	 */
+#ifdef CONFIG_LGE_PM_LAF_NOT_RELEASE_VM_BMS
+	if (!lge_get_laf_mode())
+		schedule_delayed_work(&chip->voltage_soc_timeout_work,
+			msecs_to_jiffies(chip->dt.cfg_voltage_soc_timeout_ms));
+	else
+		pr_warn("LAF mode!!! Skip voltage_soc_timeout_work.\n");
+#else
 	schedule_delayed_work(&chip->voltage_soc_timeout_work,
 		msecs_to_jiffies(chip->dt.cfg_voltage_soc_timeout_ms));
+#endif
 
 	pr_info("probe success: soc=%d vbatt=%d ocv=%d warm_reset=%d\n",
 					get_prop_bms_capacity(chip), vbatt,
@@ -4208,6 +4246,7 @@ static int bms_suspend(struct device *dev)
 
 	if (chip->apply_suspend_config) {
 		if (chip->dt.cfg_force_s3_on_suspend) {
+			disable_bms_irq(&chip->fifo_update_done_irq);
 			pr_debug("Forcing S3 state\n");
 			mutex_lock(&chip->state_change_mutex);
 			force_fsm_state(chip, S3_STATE);
@@ -4245,6 +4284,7 @@ static int bms_resume(struct device *dev)
 				force_fsm_state(chip, S2_STATE);
 			}
 			mutex_unlock(&chip->state_change_mutex);
+			enable_bms_irq(&chip->fifo_update_done_irq);
 			/*
 			 * if we were charging while suspended, we will
 			 * be woken up by the fifo done interrupt and no

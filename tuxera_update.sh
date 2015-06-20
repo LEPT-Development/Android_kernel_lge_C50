@@ -464,7 +464,7 @@ check_symvers() {
     symvers_parsed=$(mktemp)
 
     sort $(find "$searchdir" -name \*.mod.c) | uniq | \
-        egrep "{ 0x[[:xdigit:]]{8}," | awk '{print $2,$3}' | tr -d ',\"' > $searchvers
+        sed -rn 's/^[[:space:]]*\{[[:space:]]*0x([[:xdigit:]]{8}),.*["(](.*)[")].*\}.*/0x\1 \2/p' > $searchvers
 
     awk '{print $1,$2}' "$symvers" > "$symvers_parsed"
 
@@ -1013,7 +1013,7 @@ set_source_dir() {
 # Script start
 #
 
-script_version="14.11.18"
+script_version="15.2.25"
 cache_dir=".tuxera_update_cache"
 dbgdev="/dev/null"
 cache_lookup_time="none"

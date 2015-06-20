@@ -564,7 +564,8 @@ static struct of_device_id ramoops_of_match[] = {
 	{.compatible = "ramoops", },
 	{ },
 };
-#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+#if !defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) && !defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) && !defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) && !defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) && \
+	!defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) && !defined(CONFIG_MACH_MSM8939_P1BSSN_VTR_CA)
 EXPORT_COMPAT("ramoops");
 #endif//CONFIG_MACH_MSM8939_ALTEV2_VZW
 #endif

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1547,6 +1547,8 @@ EXPORT_SYMBOL(kgsl_pre_hwaccess);
  */
 static int _init(struct kgsl_device *device)
 {
+	/* Suspend the pwrscale if it is currently enabled. */
+	kgsl_pwrscale_sleep(device);
 	kgsl_pwrctrl_set_state(device, KGSL_STATE_INIT);
 	return 0;
 }
@@ -1593,6 +1595,7 @@ static int _wake(struct kgsl_device *device)
 		kgsl_pwrctrl_request_state(device, KGSL_STATE_NONE);
 		break;
 	case KGSL_STATE_INIT:
+		kgsl_pwrscale_wake(device);
 		kgsl_pwrctrl_set_state(device, KGSL_STATE_ACTIVE);
 		kgsl_pwrctrl_request_state(device, KGSL_STATE_NONE);
 		break;
@@ -1721,7 +1724,8 @@ int _suspend(struct kgsl_device *device)
 {
 	int ret = 0;
 
-	if (KGSL_STATE_SUSPEND == device->state)
+	if ((KGSL_STATE_SUSPEND == device->state) ||
+		(KGSL_STATE_NONE == device->state))
 		return ret;
 
 	/* drain to prevent from more commands being submitted */

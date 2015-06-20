@@ -1000,7 +1000,7 @@ config TOUCHSCREEN_LGE_SYNAPTICS
 	  To compile this driver as a module, choose M here: the
 	  module will be called synaptics_S3320.
 
-config TOUCHSCREEN_LGE_SYNAPTICS_YG
+config TOUCHSCREEN_MSM8916_YG
 	tristate "Synaptics YG I2C Touchscreen"
 	depends on I2C
 	help
@@ -1106,6 +1106,31 @@ config TOUCHSCREEN_UNIFIED_DRIVER
 	 Say Y here if you use lge unified driver
 	 if unsure, say N
 
+config TOUCHSCREEN_UNIFIED_DRIVER_3
+        bool "LGE Unified driver Ver3.0"
+        depends on I2C
+        default n
+        help
+         Say Y here if you use lge unified driver ver3.0
+         if unsure, say N
+
+
+config TOUCHSCREEN_MSM8916_C70
+	bool "LGE Device"
+	depends on I2C
+	default n
+	help
+	 Say Y here if you use lge unified driver
+	 if unsure, say N
+
+config TOUCHSCREEN_MSM8939_P1B
+	bool "LGE Device"
+	depends on I2C
+	default n
+	help
+	 Say Y here if you use lge unified driver
+	 if unsure, say N
+
 config TOUCHSCREEN_LGE_MELFAS
 	bool "Melfas MIT-200 based on LGE Touch Core driver"
 	depends on I2C && TOUCHSCREEN_LGE_TOUCHCORE
@@ -1116,6 +1141,14 @@ config TOUCHSCREEN_LGE_MELFAS
 
 config TOUCHSCREEN_LU202X
 	bool "LEADINGUI LU202x"
+	depends on I2C
+	default n
+	help
+	 Say Y here if you have a LEADINGUI LU202x I2C touchscreen
+	 connected to your system.
+
+config TOUCHSCREEN_S3320
+	bool "Synaptics S3320"
 	depends on I2C
 	default n
 	help

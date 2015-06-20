@@ -446,10 +446,6 @@ void rt8542_lcd_backlight_set_level(int level)
 		if (level == 0) {
 			rt8542_backlight_off();
 		} else {
-			if(level < MIN_BRIGHTNESS_RT8542)
-			{
-				level = MIN_BRIGHTNESS_RT8542;
-			}
 			bright_per = (level / 2) - 1;
 			rt8542_backlight_on(bright_per);
 		}

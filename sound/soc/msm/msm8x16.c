@@ -1,4 +1,4 @@
- /* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ /* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,6 +51,10 @@
 #define DEFAULT_MCLK_RATE 9600000
 
 #define WCD_MBHC_DEF_RLOADS 5
+
+#ifdef CONFIG_SND_SOC_TPS61256A_BOOST
+int ext_spk_boost_gpio = -1;
+#endif
 
 static int msm_btsco_rate = BTSCO_RATE_8KHZ;
 static int msm_btsco_ch = 1;
@@ -1131,7 +1135,7 @@ else{
 	btn_high[1] = 134;
 	btn_low[2] = 200;   /* Volume Up */
 	btn_high[2] = 200;
-	btn_low[3] = 400;   /* Volume Down 384 -> 400 */
+	btn_low[3] = 400;   /* Volume Down */
 	btn_high[3] = 400;
 	btn_low[4] = 401;
 	btn_high[4] = 401;
@@ -1311,6 +1315,7 @@ static struct snd_soc_dai_link msm8x16_dai[] = {
 		.cpu_dai_name	= "MultiMedia1",
 		.platform_name  = "msm-pcm-dsp.0",
 		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 			SND_SOC_DPCM_TRIGGER_POST},
 		.codec_dai_name = "snd-soc-dummy-dai",
@@ -1482,6 +1487,7 @@ static struct snd_soc_dai_link msm8x16_dai[] = {
 		.cpu_dai_name   = "MultiMedia5",
 		.platform_name  = "msm-pcm-dsp.1",
 		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
@@ -1725,6 +1731,7 @@ static struct snd_soc_dai_link msm8x16_dai[] = {
 		.codec_name     = "tombak_codec",
 		.codec_dai_name = "msm8x16_wcd_i2s_tx1",
 		.no_pcm = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
 		.be_hw_params_fixup = msm_tx_be_hw_params_fixup,
 		.ops = &msm8x16_mi2s_be_ops,
@@ -2384,6 +2391,26 @@ static int msm8x16_asoc_machine_probe(struct platform_device *pdev)
 			ret);
 		goto err;
 	}
+
+#ifdef CONFIG_SND_SOC_TPS61256A_BOOST
+	ext_spk_boost_gpio = of_get_named_gpio(pdev->dev.of_node,
+				"qcom,msm-spk-boost-gpios", 0);
+	if (ext_spk_boost_gpio < 0) {
+		dev_err(card->dev, "Looking up %s property in node %s failed %d\n",
+			"qcom,msm-spk-boost-gpios\n",
+			pdev->dev.of_node->full_name, ext_spk_boost_gpio);
+	} else {
+		ret = gpio_request(ext_spk_boost_gpio, "SPK_5V_EXT_BOOSTER");
+		if (ret) {
+			/* GPIO to enable EXT VDD exists, but failed request */
+			dev_err(card->dev,
+					"%s: Failed to request spk external booster gpio %d\n",
+					__func__, ext_spk_boost_gpio);
+			goto err;
+		}
+	}
+#endif
+
 	return 0;
 err:
 #ifndef CONFIG_MACH_LGE

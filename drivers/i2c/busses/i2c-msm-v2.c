@@ -2780,7 +2780,7 @@ static irqreturn_t i2c_msm_qup_isr(int irq, void *devid)
 		 * resetting the QUP core state immediately in the ISR
 		 * to ward off the next interrupt.
 		 */
-                i2c_msm_qup_state_set(ctrl, QUP_STATE_RESET);
+		i2c_msm_qup_state_set(ctrl, QUP_STATE_RESET);
 
 		need_wmb        = true;
 		signal_complete = true;

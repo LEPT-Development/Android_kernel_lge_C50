@@ -257,6 +257,8 @@ EXPORT_SYMBOL(mutex_unlock);
 /*
  * Lock a mutex (possibly interruptible), slowpath:
  */
+extern struct mutex binder_main_lock;
+
 static inline int __sched
 __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		    struct lockdep_map *nest_lock, unsigned long ip)
@@ -264,6 +266,8 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	struct task_struct *task = current;
 	struct mutex_waiter waiter;
 	unsigned long flags;
+
+	unsigned int debug = (lock == &binder_main_lock);
 
 	preempt_disable();
 	mutex_acquire_nest(&lock->dep_map, subclass, 0, nest_lock, ip);
@@ -340,6 +344,9 @@ slowpath:
 #endif
 	spin_lock_mutex(&lock->wait_lock, flags);
 
+	if (debug)
+		trace_printk("1. binder_main_lock, wait_lock locked\n");
+
 	debug_mutex_lock_common(lock, &waiter);
 	debug_mutex_add_waiter(lock, &waiter, task_thread_info(task));
 
@@ -348,7 +355,11 @@ slowpath:
 	waiter.task = task;
 
 	if (MUTEX_SHOW_NO_WAITER(lock) && (atomic_xchg(&lock->count, -1) == 1))
+	{
+		if (debug)
+			trace_printk("2. binder_main_lock, done\n");
 		goto done;
+	}
 
 	lock_contended(&lock->dep_map, ip);
 
@@ -363,8 +374,11 @@ slowpath:
 		 * other waiters:
 		 */
 		if (MUTEX_SHOW_NO_WAITER(lock) &&
-		   (atomic_xchg(&lock->count, -1) == 1))
+		   (atomic_xchg(&lock->count, -1) == 1)) {
+			if (debug)
+				trace_printk("3. binder_main_lock, exit the loop\n");
 			break;
+		}
 
 		/*
 		 * got a signal? (This code gets eliminated in the
@@ -384,7 +398,13 @@ slowpath:
 
 		/* didn't get the lock, go to sleep: */
 		spin_unlock_mutex(&lock->wait_lock, flags);
+
+		if (debug)
+			trace_printk("4. binder_main_lock, call preemption\n");
 		schedule_preempt_disabled();
+
+		if (debug)
+			trace_printk("5. binder_main_lock, back from preemption\n");
 		spin_lock_mutex(&lock->wait_lock, flags);
 	}
 
@@ -398,6 +418,8 @@ done:
 	if (likely(list_empty(&lock->wait_list)))
 		atomic_set(&lock->count, 0);
 
+	if (debug)
+		trace_printk("6. binder_main_lock, unlocking wait_lock\n");
 	spin_unlock_mutex(&lock->wait_lock, flags);
 
 	debug_mutex_free_waiter(&waiter);

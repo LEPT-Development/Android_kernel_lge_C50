@@ -36,6 +36,10 @@
 #include "mdss_mdp.h"
 #include "mdss_mdp_rotator.h"
 
+#if defined(CONFIG_LGE_DYNAMIC_FPS)
+#include <linux/input/unified_driver_2/lgtp_common_notify.h>
+#endif
+
 #define VSYNC_PERIOD 16
 #define BORDERFILL_NDX	0x0BF000BF
 #define CHECK_BOUNDS(offset, size, max_size) \
@@ -446,14 +450,16 @@ static int __mdss_mdp_validate_pxl_extn(struct mdss_mdp_pipe *pipe)
 
 		/*
 		 * For chroma plane, width is half for the following sub sampled
-		 * formats
+		 * formats. Except in case of decimation, where hardware avoids
+		 * 1 line of decimation instead of downsampling.
 		 */
-		if (plane == 1 &&
+		if (plane == 1 && !pipe->horz_deci &&
 		    ((pipe->src_fmt->chroma_sample == MDSS_MDP_CHROMA_420) ||
-		     (pipe->src_fmt->chroma_sample == MDSS_MDP_CHROMA_H2V1)))
+		     (pipe->src_fmt->chroma_sample == MDSS_MDP_CHROMA_H2V1))) {
 			src_w >>= 1;
+		}
 
-		if (plane == 1 &&
+		if (plane == 1 && !pipe->vert_deci &&
 		    ((pipe->src_fmt->chroma_sample == MDSS_MDP_CHROMA_420) ||
 		     (pipe->src_fmt->chroma_sample == MDSS_MDP_CHROMA_H1V2)))
 			src_h >>= 1;
@@ -486,7 +492,8 @@ static int __mdss_mdp_validate_pxl_extn(struct mdss_mdp_pipe *pipe)
 			(hor_ov_fetch > pipe->img_width) ||
 			(vert_req_pixels != vert_fetch_pixels) ||
 			(vert_ov_fetch > pipe->img_height)) {
-			pr_err("err: h_req:%d h_fetch:%d v_req:%d v_fetch:%d src_img:[%d,%d]\n",
+			pr_err("err: plane=%d h_req:%d h_fetch:%d v_req:%d v_fetch:%d src_img:[%d,%d]\n",
+					plane,
 					hor_req_pixels, hor_fetch_pixels,
 					vert_req_pixels, vert_fetch_pixels,
 					pipe->img_width, pipe->img_height);
@@ -1959,6 +1966,18 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 		goto pan_display_error;
 	}
 
+	ret = mdss_mdp_overlay_get_fb_pipe(mfd, &pipe,
+					MDSS_MDP_MIXER_MUX_LEFT);
+	if (ret) {
+		pr_err("unable to allocate base pipe\n");
+		goto pan_display_error;
+	}
+
+	if (mdss_mdp_pipe_map(pipe)) {
+		pr_err("unable to map base pipe\n");
+		goto pan_display_error;
+	}
+
 	ret = mdss_mdp_overlay_start(mfd);
 	if (ret) {
 		pr_err("unable to start overlay %d (%d)\n", mfd->index, ret);
@@ -1971,19 +1990,7 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 		pr_err("IOMMU attach failed\n");
 		goto pan_display_error;
 	}
-
 #endif
-	ret = mdss_mdp_overlay_get_fb_pipe(mfd, &pipe,
-					MDSS_MDP_MIXER_MUX_LEFT);
-	if (ret) {
-		pr_err("unable to allocate base pipe\n");
-		goto pan_display_error;
-	}
-
-	if (mdss_mdp_pipe_map(pipe)) {
-		pr_err("unable to map base pipe\n");
-		goto pan_display_error;
-	}
 
 	buf = &pipe->back_buf;
 	if (mdata->mdss_util->iommu_attached()) {
@@ -2124,6 +2131,67 @@ int mdss_mdp_overlay_vsync_ctrl(struct msm_fb_data_type *mfd, int en)
 	return rc;
 }
 
+#if defined(CONFIG_LGE_DYNAMIC_FPS)
+static ssize_t min_fps_sysfs_rda_dfps(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	ssize_t ret;
+	struct mdss_panel_data *pdata;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (!pdata) {
+		pr_err("no panel connected for fb%d\n", mfd->index);
+		return -ENODEV;
+	}
+
+	pr_info("dynamic min_fps : %d\n", pdata->panel_info.min_fps);
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", pdata->panel_info.min_fps);
+	return ret;
+};
+
+static ssize_t min_fps_sysfs_wta_dfps(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int min_dfps, rc = 0;
+	struct mdss_panel_data *pdata;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	rc = kstrtoint(buf, 10, &min_dfps);
+	if (rc) {
+		pr_err("%s: kstrtoint failed. rc=%d\n", __func__, rc);
+		return rc;
+	}
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (!pdata) {
+		pr_err("no panel connected for fb%d\n", mfd->index);
+		return -ENODEV;
+	}
+	pr_info("New min_dfps : %d\n", min_dfps);
+	if (min_dfps < 30 || min_dfps > 60) {
+		pr_err("Not supported fps\n");
+		return -ENODEV;
+	}
+	pdata->panel_info.min_fps = min_dfps;
+	return count;
+
+};
+
+static DEVICE_ATTR(min_fps, S_IRUGO | S_IWUSR, min_fps_sysfs_rda_dfps,
+	min_fps_sysfs_wta_dfps);
+
+static struct attribute *lge_dynamic_fps_fs_attrs[] = {
+	&dev_attr_min_fps.attr,
+	NULL,
+};
+static struct attribute_group lge_dynamic_fps_fs_attrs_group = {
+	.attrs = lge_dynamic_fps_fs_attrs,
+};
+#endif
+
 static ssize_t dynamic_fps_sysfs_rda_dfps(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -2175,7 +2243,7 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		pr_err("no panel connected for fb%d\n", mfd->index);
 		return -ENODEV;
 	}
-
+	pr_info("New FPS : %d, Current FPS : %d\n", dfps, pdata->panel_info.mipi.frame_rate);
 	if (dfps == pdata->panel_info.mipi.frame_rate) {
 		pr_debug("%s: FPS is already %d\n",
 			__func__, dfps);
@@ -2184,10 +2252,17 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 
 	mutex_lock(&mdp5_data->dfps_lock);
 	if (dfps < pdata->panel_info.min_fps) {
+#if defined(CONFIG_LGE_DYNAMIC_FPS)
+		pr_err("Unsupported FPS. min_fps = %d\n",
+				pdata->panel_info.min_fps);
+		dfps = pdata->panel_info.min_fps;
+		rc = mdss_mdp_ctl_update_fps(mdp5_data->ctl, dfps);
+#else
 		pr_err("Unsupported FPS. min_fps = %d\n",
 				pdata->panel_info.min_fps);
 		mutex_unlock(&mdp5_data->dfps_lock);
 		return -EINVAL;
+#endif
 	} else if (dfps > pdata->panel_info.max_fps) {
 		pr_warn("Unsupported FPS. Configuring to max_fps = %d\n",
 				pdata->panel_info.max_fps);
@@ -2197,7 +2272,7 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		rc = mdss_mdp_ctl_update_fps(mdp5_data->ctl, dfps);
 	}
 	if (!rc) {
-		pr_info("%s: configured to '%d' FPS\n", __func__, dfps);
+		pr_debug("%s: configured to '%d' FPS\n", __func__, dfps);
 	} else {
 		pr_err("Failed to configure '%d' FPS. rc = %d\n",
 							dfps, rc);
@@ -2206,6 +2281,10 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 	}
 	pdata->panel_info.new_fps = dfps;
 	mutex_unlock(&mdp5_data->dfps_lock);
+#if defined(CONFIG_LGE_DYNAMIC_FPS)
+	if(dfps!=pdata->panel_info.max_fps)
+		touch_notifier_call_chain(LCD_EVENT_FPS_CHANGED, NULL);
+#endif
 	return count;
 } /* dynamic_fps_sysfs_wta_dfps */
 
@@ -4160,6 +4239,15 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 			goto init_fail;
 		}
 	}
+
+#if defined(CONFIG_LGE_DYNAMIC_FPS)
+	rc = sysfs_create_group(&dev->kobj,
+			&lge_dynamic_fps_fs_attrs_group);
+	if (rc) {
+		pr_err("Error dfps sysfs creation ret=%d\n", rc);
+		goto init_fail;
+	}
+#endif
 
 	if (mfd->panel_info->mipi.dynamic_switch_enabled ||
 			mfd->panel_info->type == MIPI_CMD_PANEL) {

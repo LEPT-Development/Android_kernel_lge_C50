@@ -16,7 +16,7 @@
 		interrupt-parent = <&msm_gpio>;
 		hallic-left-irq-gpio = <&msm_gpio 117 0x00>;
 		hallic-right-irq-gpio = <&msm_gpio 62 0x00>;
-		status = "ok";
+		status = "disable";
 	};
 };
 
@@ -67,7 +67,7 @@
 
 				blmap_size = <256>;
 				blmap = <
-					/*   0 */     1    6   12   17   23   28   33   39   44   50
+					/*   0 */    55   55   55   55   55   55   55   55   55   55
 					/*  10 */    55   55   56   56   56   56   57   57   57   58
 					/*  20 */    58   58   58   59   59   60   61   62   63   64
 					/*  30 */    64   65   66   67   68   69   70   72   73   74

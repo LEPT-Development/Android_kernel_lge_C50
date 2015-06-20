@@ -2305,7 +2305,7 @@ static int exfat_fill_super(struct super_block *sb, void *data, int silent)
 	ret = FsMountVol(sb);
 	if (ret) {
 		if (!silent)
-            printk(KERN_ERR "[EXFAT] FsMountVol failed :%d\n", ret);
+			printk(KERN_ERR "[EXFAT] FsMountVol failed\n");
 
 		goto out_fail;
 	}

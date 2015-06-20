@@ -74,10 +74,10 @@
 		Rohm,pulse = <0>;
 		Rohm,mode = <0>;
 		Rohm,measure_time = <6>;
-		Rohm,led_current = <1>;
+		Rohm,led_current = <2>;
 		Rohm,als_gain = <0>;
 		Rohm,infrared_level = <0>;
-		Rohm,ps_gain = <1>;
+		Rohm,ps_gain = <0>;
 		Rohm,persistence = <2>;
 		Rohm,near_offset = <16>;
 		Rohm,far_offset = <4>;

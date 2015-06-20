@@ -59,6 +59,7 @@ extern void rt8542_led_enable(void);
 extern void rt8542_led_disable(void);
 #endif
 /*                                                                          */
+
 static int flash_read_reg(struct msm_camera_i2c_client *client, unsigned char reg, unsigned char *data)
 {
 	int err;
@@ -97,6 +98,66 @@ static int flash_write_reg(struct msm_camera_i2c_client *client, unsigned char r
 }
 /*                                                           */
 #endif
+
+#if defined(CONFIG_BACKLIGHT_LM3632)
+/* Set current & voltage limit for low temperature*/
+int lm3632_led_set_limit(struct msm_led_flash_ctrl_t *fctrl)
+{
+	int rc = 0;
+	unsigned char val = 0;
+
+#if 0
+	/* Set current limit */
+	rc = flash_read_reg(fctrl->flash_i2c_client, 0x07, &val);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+
+	val = val & 0xDF;
+	rc = flash_write_reg(fctrl->flash_i2c_client, 0x07, val);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+#endif
+
+	/* Set VIN Monitor threshold level */
+	val = 0;
+	rc = flash_read_reg(fctrl->flash_i2c_client, 0x08, &val);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+
+	val = val & 0xF8;
+	val = val | 0x03;
+	rc = flash_write_reg(fctrl->flash_i2c_client, 0x08, val);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+
+	return rc;
+}
+
+void lm3632_led_status_check(struct msm_led_flash_ctrl_t *fctrl)
+{
+	int rc = 0;
+	unsigned char val[2] = {0};
+
+	rc = flash_read_reg(fctrl->flash_i2c_client, 0x0B, &val[0]);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+
+	rc = flash_read_reg(fctrl->flash_i2c_client, 0x10, &val[1]);
+	if(rc < 0) {
+		pr_err("%s %d failed\n", __func__, __LINE__);
+	}
+
+	pr_info("status = 0x%.2x, 0x%.2x\n", val[0], val[1]);
+
+	return;
+}
+#endif
+
 
 int32_t msm_led_i2c_trigger_get_subdev_id(struct msm_led_flash_ctrl_t *fctrl,
 	void *arg)
@@ -137,6 +198,11 @@ int32_t msm_led_i2c_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 			cfg->torch_current[i] =
 				fctrl->torch_max_current[i];
 		}
+#if defined(CONFIG_BACKLIGHT_LM3632)
+		rc = lm3632_led_set_limit(fctrl);
+		if(rc < 0)
+			pr_err("%s %d failed\n", __func__, __LINE__);
+#endif
 		break;
 
 	case MSM_CAMERA_LED_RELEASE:
@@ -183,6 +249,10 @@ int32_t msm_led_i2c_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 		}
 		if (fctrl->func_tbl->flash_led_low)
 			rc = fctrl->func_tbl->flash_led_low(fctrl);
+
+#if defined(CONFIG_BACKLIGHT_LM3632)
+		lm3632_led_status_check(fctrl);
+#endif
 		break;
 
 	case MSM_CAMERA_LED_HIGH:
@@ -204,6 +274,10 @@ int32_t msm_led_i2c_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 		}
 		if (fctrl->func_tbl->flash_led_high)
 			rc = fctrl->func_tbl->flash_led_high(fctrl);
+
+#if defined(CONFIG_BACKLIGHT_LM3632)
+		lm3632_led_status_check(fctrl);
+#endif
 		break;
 	default:
 		rc = -EFAULT;
@@ -371,18 +445,8 @@ int msm_flash_led_release(struct msm_led_flash_ctrl_t *fctrl)
 
 #if defined(CONFIG_BACKLIGHT_LM3632)
 
-	#if defined(CONFIG_LGE_G4STYLUS_CAMERA)
+	#if defined(CONFIG_LGE_G4STYLUS_CAMERA) || defined(CONFIG_LGE_P1B_CAMERA)
 		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, 0x09);
-	#elif defined(CONFIG_LGE_P1B_CAMERA)
-		flash_ctrl = 0;
-		rc = flash_read_reg(fctrl->flash_i2c_client, 0x0A, &flash_ctrl);
-		if (rc < 0) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-		}
-
-		flash_ctrl |= 0x09;
-
-		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, flash_ctrl);
 	#else
 		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, 0x11);
 	#endif
@@ -495,19 +559,8 @@ int msm_flash_led_off(struct msm_led_flash_ctrl_t *fctrl)
 	if (fctrl->flash_i2c_client) {
 #if defined(CONFIG_BACKLIGHT_LM3632)
 
-	#if defined(CONFIG_LGE_G4STYLUS_CAMERA)
+	#if defined(CONFIG_LGE_G4STYLUS_CAMERA) || defined(CONFIG_LGE_P1B_CAMERA)
 		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, 0x09);
-	#elif defined(CONFIG_LGE_P1B_CAMERA)
-		flash_ctrl = 0;
-		rc = flash_read_reg(fctrl->flash_i2c_client, 0x0A, &flash_ctrl);
-		if (rc < 0) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-		}
-
-		flash_ctrl |= 0x09;
-
-		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, flash_ctrl);
-
 	#else
 		rc =flash_write_reg(fctrl->flash_i2c_client, 0x0A, 0x11);
 	#endif
@@ -805,7 +858,10 @@ int msm_flash_led_high(struct msm_led_flash_ctrl_t *fctrl)
 		defined(CONFIG_MACH_MSM8916_C70DS_GLOBAL_COM) || \
 		defined(CONFIG_MACH_MSM8916_C70N_ATT_US) || \
 		defined(CONFIG_MACH_MSM8916_C70N_GLOBAL_COM) || \
+		defined(CONFIG_MACH_MSM8916_C70N_KT_KR) || \
+		defined(CONFIG_MACH_MSM8916_C70N_LGU_KR) || \
 		defined(CONFIG_MACH_MSM8916_C70N_MPCS_US) || \
+		defined(CONFIG_MACH_MSM8916_C70N_SKT_KR) || \
 		defined(CONFIG_MACH_MSM8916_C70N_TMO_US) || \
 		defined(CONFIG_MACH_MSM8916_C90N_GLOBAL_COM) || \
 		defined(CONFIG_MACH_MSM8916_C70W_KR) || \
@@ -874,6 +930,11 @@ int msm_flash_led_high(struct msm_led_flash_ctrl_t *fctrl)
 #else
 		strobe_ctrl &= 0xDF; /* 1101 1111 */
 		strobe_ctrl |= 0x10; /* 0001 0000 */
+#endif
+
+#if defined(CONFIG_BACKLIGHT_LM3632)
+		strobe_ctrl &= 0xFC;
+		strobe_ctrl |= 0x01;
 #endif
 
 		rc =flash_write_reg(fctrl->flash_i2c_client,	0x09, strobe_ctrl);

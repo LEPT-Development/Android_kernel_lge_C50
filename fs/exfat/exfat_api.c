@@ -72,19 +72,7 @@ INT32 FsMountVol(struct super_block *sb)
 		if (!fs_struct[drv].mounted) break;
 	}
 
-    if (drv >= MAX_DRIVE)
-    {
-/*
-               
-                        
-                                 
-                                                           
-                                                                                                                   
- */
-        printk(KERN_ERR "%s: drv : %d, MAX_DRIVE : %d\n", __func__, drv, MAX_DRIVE);
-        sm_V(&z_sem);
-        return(FFS_ERROR);
-    }
+	if (drv >= MAX_DRIVE) return(FFS_ERROR);
 
 	sm_P(&(fs_struct[drv].v_sem));
 

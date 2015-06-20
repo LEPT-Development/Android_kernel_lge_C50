@@ -44,15 +44,28 @@ struct pm8xxx_cradle {
 	defined(CONFIG_MACH_MSM8926_E7LTE_VZW_US) || defined(CONFIG_MACH_MSM8926_E7LTE_ATT_US) || \
 	defined(CONFIG_MACH_MSM8926_E7LTE_USC_US) || defined(CONFIG_MACH_MSM8926_B2LN_KR) || \
 	defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || \
-	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8916_G4STYLUS_CRK_US) || \
+        defined(CONFIG_MACH_MSM8916_STYLUSC_SPR_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSDS_GLOBAL_COM) || \
+        defined(CONFIG_MACH_MSM8916_G4STYLUSDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_GLOBAL_COM) || \
+        defined(CONFIG_MACH_MSM8916_G4STYLUSN_MPCS_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_RGS_CA) || \
+        defined(CONFIG_MACH_MSM8916_G4STYLUSN_TMO_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_VTR_CA) || \
+        defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || \
+		defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA)
 #define POUCH_DETECT_DELAY 100
 #endif
 
 static struct workqueue_struct *cradle_wq;
 static struct pm8xxx_cradle *cradle;
 #if defined(CONFIG_MACH_MSM8926_X10_VZW) || defined(CONFIG_MACH_MSM8926_B2L_ATT) || \
-	defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
-#if defined(CONFIG_TOUCHSCREEN_ATMEL_S540) || defined(CONFIG_TOUCHSCREEN_ATMEL_T1664)
+	defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || \
+	defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUS_CRK_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR) || \
+	defined(CONFIG_MACH_MSM8916_STYLUSC_SPR_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSDS_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSN_MPCS_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_RGS_CA) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSN_TMO_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_VTR_CA)
+#if defined(CONFIG_TOUCHSCREEN_ATMEL_S540) || defined(CONFIG_TOUCHSCREEN_ATMEL_T1664) || defined(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_TD4191)
 static int is_smart_cover_closed = 0; /* check status of smart cover to resize quick window area */
 int cradle_smart_cover_status(void)
 {
@@ -79,6 +92,10 @@ static void boot_cradle_det_func(void)
 	cradle->state = state;
 	wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(3000));
 	switch_set_state(&cradle->sdev, cradle->state);
+
+#if defined(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_TD4191)
+	is_smart_cover_closed = cradle->pouch;
+#endif
 }
 
 static void pm8xxx_pouch_work_func(struct work_struct *work)
@@ -109,7 +126,7 @@ static void pm8xxx_pouch_work_func(struct work_struct *work)
 		spin_unlock_irqrestore(&cradle->lock, flags);
 		printk("%s : [Cradle] pouch value is %d (no change)\n", __func__ , state);
 	}
-#if defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+#if defined(CONFIG_MACH_MSM8926_B2LN_KR) || defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR) || defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA)
 #if defined(CONFIG_TOUCHSCREEN_ATMEL_S540) || defined(CONFIG_TOUCHSCREEN_ATMEL_T1664)
 	is_smart_cover_closed = state;
 #endif
@@ -159,8 +176,19 @@ static irqreturn_t pm8xxx_pouch_irq_handler(int irq, void *handle)
 	defined(CONFIG_MACH_MSM8926_E7LTE_VZW_US) || defined(CONFIG_MACH_MSM8926_E7LTE_ATT_US) || \
 	defined(CONFIG_MACH_MSM8926_E7LTE_USC_US) || defined(CONFIG_MACH_MSM8926_B2LN_KR) || \
 	defined(CONFIG_MACH_MSM8939_ALTEV2_VZW) || defined(CONFIG_MACH_MSM8939_P1BDSN_GLOBAL_COM) || \
-	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US)
+	defined(CONFIG_MACH_MSM8939_P1BC_SPR_US) || defined(CONFIG_MACH_MSM8916_G4STYLUS_CRK_US) || \
+	defined(CONFIG_MACH_MSM8916_STYLUSC_SPR_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSDS_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSDSN_GLOBAL_COM) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_GLOBAL_COM) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSN_MPCS_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_RGS_CA) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSN_TMO_US) || defined(CONFIG_MACH_MSM8916_G4STYLUSN_VTR_CA) || \
+	defined(CONFIG_MACH_MSM8916_G4STYLUSW_KT_KR) || defined(CONFIG_MACH_MSM8939_P1BSSN_SKT_KR)|| \
+	defined(CONFIG_MACH_MSM8939_P1BSSN_BELL_CA)
+#if defined(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_TD4191)
+	is_smart_cover_closed = !gpio_get_value(cradle->pdata->hallic_pouch_detect_pin);
+	v = 1 + 1*is_smart_cover_closed;
+#else
 	v = 1 + 1*(!gpio_get_value(cradle->pdata->hallic_pouch_detect_pin));
+#endif
 	wake_lock_timeout(&cradle->wake_lock, msecs_to_jiffies(POUCH_DETECT_DELAY*v+5));
 	queue_delayed_work(cradle_wq, &cradle_handle->pouch_work, msecs_to_jiffies(POUCH_DETECT_DELAY*v+5));
 #else

@@ -101,3 +101,9 @@ config LCD_LGE_IOVCC_EXT_LDO
 config LCD_VDD_VDDIO_EXT_LDO
 	bool "Ext VDD VDDIO LDO"
 	default n
+config LGE_DYNAMIC_FPS
+	bool "LGE Dynamic FPS feature"
+	default n
+config LGE_UNDERRUN
+	bool "LGE UNDERRUN feature to prevent 8916-user-underrun"
+	default n

@@ -75,7 +75,6 @@ config SENSOR_ATMF04
        depends on I2C
        help
          Support ATMF04 as an input device.
-
 config SENSORS_K303C
 	tristate "STM K303C 6axis axl+mag sensor support"
 	depends on I2C=y
@@ -125,5 +124,4 @@ config SENSOR_AK09911_DRIVER
         depends on I2C
         help
           Support AK09911 in BMI160 Driver as an input device.
-
 endif

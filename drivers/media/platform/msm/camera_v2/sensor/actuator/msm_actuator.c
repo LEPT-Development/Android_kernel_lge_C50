@@ -30,6 +30,7 @@ static int32_t msm_actuator_power_down(struct msm_actuator_ctrl_t *a_ctrl);
 /*                                                                           */
 static int32_t power_down_mode = 0;
 static int32_t actuator_num = 0;
+static int32_t actuator_state = 0;
 /*                                                                           */
 #else
 static int32_t actuator_num = 0;
@@ -936,6 +937,7 @@ static int msm_actuator_init(struct msm_actuator_ctrl_t *a_ctrl,
 						__func__, __LINE__);
 		}
 	}
+	actuator_state = ACTUATOR_POWER_UP;
 	CDBG("Exit\n");
 	return rc;
 }
@@ -1111,6 +1113,9 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 		else if (power_down_mode == 1) {
 			pr_err("[CHECK] current mode is power_down_mode = 1 : no need to set\n");
 		}
+		else if (actuator_state == ACTUATOR_POWER_DOWN) {	//TD2486034816, NOC error during camera recovery, jinw.kim
+			pr_err("[CHECK] Actuator is already closed.\n");
+		}
 		else {
 			CDBG("[CHECK] I2C Write for Actuator Power Down!!\n");
 
@@ -1124,7 +1129,7 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 
 			switch(actuator_num){
 				case 9716: //dw9716
-					pr_err("[CHECK] this is dw9716!! make power down mode");
+					pr_info("[CHECK] this is dw9716!! make power down mode\n");
 					rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write(
 						&a_ctrl->i2c_client,
 						0x80, //PWDN MODE = HIGH
@@ -1132,7 +1137,7 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 						MSM_ACTUATOR_BYTE_DATA);
 					break;
 				case 9718: //dw9718
-					pr_err("[CHECK] this is dw9718!! make power down mode");
+					pr_info("[CHECK] this is dw9718!! make power down mode\n");
 					rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write(
 						&a_ctrl->i2c_client,
 						0x00,
@@ -1140,7 +1145,7 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 						MSM_ACTUATOR_BYTE_DATA);
 					break;
 				case 517: //wv517
-					pr_err("[CHECK] this is wv517!! make power down mode");
+					pr_info("[CHECK] this is wv517!! make power down mode\n");
 					rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write(
 						&a_ctrl->i2c_client,
 						0x40,
@@ -1164,8 +1169,8 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 							__func__, __LINE__);
 			}
 		}
-
 	}
+	actuator_state = ACTUATOR_POWER_DOWN;
 /*                                                                           */
 #endif
 

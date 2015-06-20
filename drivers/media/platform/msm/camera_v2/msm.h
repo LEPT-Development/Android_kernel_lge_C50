@@ -34,8 +34,10 @@
 #define MSM_POST_EVT_NOTIMEOUT 0xFFFFFFFF
 #define MSM_CAMERA_STREAM_CNT_BITS  32
 
+#ifdef CONFIG_LGE_UNDERRUN
 #define CAMERA_DISABLE_PC_LATENCY 1000
 #define CAMERA_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
+#endif
 
 struct msm_video_device {
 	struct video_device *vdev;
@@ -105,7 +107,9 @@ struct msm_session {
 	struct mutex lock;
 };
 
+#ifdef CONFIG_LGE_UNDERRUN
 void msm_pm_qos_update_request(int val);
+#endif
 
 int msm_post_event(struct v4l2_event *event, int timeout);
 int  msm_create_session(unsigned int session, struct video_device *vdev);

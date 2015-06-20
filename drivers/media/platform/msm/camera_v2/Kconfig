@@ -14,6 +14,12 @@ config LG_PROXY
         ---help---
         Enable support for proxy sensor for msm camera.
 
+config LG_TCS
+        bool "Qualcomm MSM camera tcs support"
+        depends on MSMB_CAMERA
+        ---help---
+        Enable support for rgbir sensor for msm camera.
+
 config MSM_CPP
         bool "Qualcomm MSM Camera Post Processing Engine support"
         depends on MSMB_CAMERA
@@ -355,6 +361,12 @@ config BACKLIGHT_LM3632
 	depends on BACKLIGHT_CLASS_DEVICE && I2C
 	help
 	  This supports TI LM3632 backlight, LCD power and flash solution
+
+config LGE_TOUCH_CTRL_DSV
+	tristate "Touch Control DSV in LM3632"
+	depends on BACKLIGHT_LM3632
+	help
+	  This supports Touch IC control DSV for knock on
 
 config BACKLIGHT_LM3639
 	tristate "Backlight Driver for LM3639"

@@ -1622,13 +1622,11 @@ static int touch_request_firmware(struct lge_touch_data *ts)
 
 	if (dual_panel) {
 		fw_name = ts_pdata->p5_fw_image;
-		ts->pdata->limit->slope_min = 89;
-		ts->pdata->limit->slope_max = 111;
 		TOUCH_INFO_MSG("[P5]-[slope_min/max] be changed : 90 -> %d / 110 -> %d\n",
 			ts->pdata->limit->slope_min,
 			ts->pdata->limit->slope_max);
 	} else {
-		TOUCH_INFO_MSG("[P4]-[slope_min/max] : %d / %d\n",
+		TOUCH_INFO_MSG("[P4]-[slope_min/max] be changed : 90 -> %d / 110 -> %d\n",
 			ts->pdata->limit->slope_min,
 			ts->pdata->limit->slope_max);
 	}

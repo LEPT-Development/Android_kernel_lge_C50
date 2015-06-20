@@ -559,8 +559,10 @@ static int camera_v4l2_open(struct file *filep)
 	if (!atomic_read(&pvdev->opened)) {
 		pm_stay_awake(&pvdev->vdev->dev);
 
+		#ifdef CONFIG_LGE_UNDERRUN
 		/* Disable power collapse latency */
 		msm_pm_qos_update_request(CAMERA_DISABLE_PC_LATENCY);
+		#endif
 
 		/* create a new session when first opened */
 		rc = msm_create_session(pvdev->vdev->num, pvdev->vdev);
@@ -671,8 +673,10 @@ static int camera_v4l2_close(struct file *filep)
 		 * and application crashes */
 		msm_destroy_session(pvdev->vdev->num);
 
+		#ifdef CONFIG_LGE_UNDERRUN
 		/* Enable power collapse latency */
 		msm_pm_qos_update_request(CAMERA_ENABLE_PC_LATENCY);
+		#endif
 
 		pm_relax(&pvdev->vdev->dev);
 	} else {

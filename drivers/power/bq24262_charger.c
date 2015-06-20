@@ -164,6 +164,10 @@
 #define INPUT_CURRENT_LIMIT_1500mA	1500
 #define INPUT_CURRENT_LIMIT_2500mA	2500
 
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+#define USB_CURRENT_MAX 900
+#endif
+
 enum bq24262_chg_status {
 	BQ_CHG_STATUS_NONE 		= 0,
 	BQ_CHG_STATUS_FAST_CHARGE 	= 1,
@@ -285,6 +289,10 @@ struct bq24262_chip {
 	struct qpnp_adc_tm_btm_param  adc_param;
 #endif
 
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+	bool usb_current_max_enabled;
+#endif
+
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
 	enum lge_btm_states 	btm_state;
 	int pseudo_ui_chg;
@@ -301,13 +309,6 @@ struct bq24262_chip {
 #endif
 //	int set_chg_current_ma;
 	int regulation_mV;
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	bool finished_set_aicl;
-	bool enable_set_aicl;
-	struct delayed_work  set_aicl_work;
-	int aicl_set_chg_ma;
-	bool temp_before_finish_set_aicl;
-#endif
 };
 
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
@@ -539,6 +540,7 @@ int32_t bq24262_is_ready(void)
 }
 EXPORT_SYMBOL(bq24262_is_ready);
 
+
 static void bq24262_notify_usb_of_the_plugin_event(int plugin)
 {
 	plugin = !!plugin;
@@ -696,7 +698,11 @@ static enum power_supply_property bq24262_batt_power_props[] = {
 #endif
 
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
-	POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER,
+	POWER_SUPPLY_PROP_SAFETY_TIMER,
+#endif
+
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+	POWER_SUPPLY_PROP_USB_CURRENT_MAX,
 #endif
 
 #ifdef CONFIG_LGE_PM_FACTORY_TESTMODE
@@ -719,14 +725,6 @@ static struct input_ma_limit_entry icl_ma_table[] = {
 	{2500, 0x06},
 	{2000, 0x07},
 };
-
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-static int chg_ma_table[] = {1200, 1500};
-#else
-static int chg_ma_table[] = {500, 700, 800, 1000, 1100, 1200, 1500};
-#endif
-#endif
 
 #ifndef CONFIG_LGE_PM_IRQ_NOT_WORKGROUND
 static int get_prop_hw_rev(void)
@@ -1150,6 +1148,15 @@ static int bq24262_batt_power_get_property(struct power_supply *psy,
 			break;
 #endif
 
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+		case POWER_SUPPLY_PROP_USB_CURRENT_MAX:
+			if(chip->usb_current_max_enabled)
+				val->intval = 1;
+			else
+				val->intval = 0;
+			break;
+#endif
+
 #ifdef CONFIG_LGE_PM_BATTERY_ID_CHECKER
 		case POWER_SUPPLY_PROP_BATTERY_ID_CHECKER:
 			val->intval = read_lge_battery_id();
@@ -1160,7 +1167,7 @@ static int bq24262_batt_power_get_property(struct power_supply *psy,
 #endif
 
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
-		case POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER:
+		case POWER_SUPPLY_PROP_SAFETY_TIMER:
 			val->intval = chip->safety_time_enable;
 			break;
 #endif
@@ -1198,7 +1205,7 @@ static int bq24262_batt_power_set_property(struct power_supply *psy,
 			break;
 
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
-		case POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER:
+		case POWER_SUPPLY_PROP_SAFETY_TIMER:
 			chip->safety_time_enable = val->intval;
 			if (chip->safety_time_enable) {
 				if (chip->chg_cable_status == BQ_CHG_STATUS_FAST_CHARGE
@@ -1214,6 +1221,22 @@ static int bq24262_batt_power_set_property(struct power_supply *psy,
 			}
 			break;
 #endif
+
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+		case POWER_SUPPLY_PROP_USB_CURRENT_MAX:
+			if(val->intval){
+				pr_info("usb_current_max on\n");
+				chip->usb_current_max_enabled = true;
+			}else{
+				pr_info("usb_current_max off\n");
+				chip->usb_current_max_enabled = false;
+			}
+
+			bq24262_set_ibat_max(chip, chip->chg_current_ma);
+			bq24262_set_input_i_limit(chip, chip->cur_limit_ma);
+			break;
+#endif
+
 		default:
 			return -EINVAL;
 	}
@@ -1230,7 +1253,10 @@ static int bq24262_batt_power_property_is_writeable(struct power_supply *psy,
 		case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		case POWER_SUPPLY_PROP_PRESENT:
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
-		case POWER_SUPPLY_PROP_SAFETY_CHARGER_TIMER:
+		case POWER_SUPPLY_PROP_SAFETY_TIMER:
+#endif
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+		case POWER_SUPPLY_PROP_USB_CURRENT_MAX:
 #endif
 			return 1;
 		default:
@@ -1257,7 +1283,6 @@ static void bq24262_charging_setting(struct bq24262_chip *chip)
 	} else {
 		chip->usb_online = 0;
 	}
-
 
 #ifdef CONFIG_LGE_PM_PSEUDO_BATTERY
 	if (pseudo_batt_info.mode) {
@@ -1290,18 +1315,8 @@ static void bq24262_charging_setting(struct bq24262_chip *chip)
 		pr_info("USB_charging wtlim i_lim= %d chg_curr= %d \n",
 				chip->cur_limit_ma, chip->chg_current_ma);
 	} else if (chip->ac_online && usb_in) {
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		if (!chip->finished_set_aicl) {
-			chip->chg_current_ma = lge_pm_get_ta_current();
-			chip->chg_current_init_ma = lge_pm_get_ta_current();
-		} else {
-			chip->chg_current_ma = chip->aicl_set_chg_ma;
-			chip->chg_current_init_ma = chip->aicl_set_chg_ma;
-		}
-#else
 		chip->chg_current_ma = lge_pm_get_ta_current();
 		chip->chg_current_init_ma = lge_pm_get_ta_current();
-#endif
 		pr_info("DC_charging chg_current_init_ma = %d \n",
 				chip->chg_current_init_ma);
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
@@ -1310,23 +1325,13 @@ static void bq24262_charging_setting(struct bq24262_chip *chip)
 		else
 			pr_info("thermal_engine_control : false\n");
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		if (chip->reached_temp_level && chip->finished_set_aicl) {
-#else
 		if (chip->reached_temp_level) {
-#endif
 			pr_err("reached_temp : %d\n", chip->reached_temp_level);
 			chip->chg_current_ma = chip->otp_ibat_current;
 			chip->cur_limit_ma = INPUT_CURRENT_LIMIT_500mA;
 			pr_info("reached_temp charging : %d\n", chip->chg_current_ma);
 			return;
 		}
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		else if (chip->reached_temp_level
-				&& delayed_work_pending(&chip->set_aicl_work)) {
-			pr_debug("Enable temp scenario but not set chg_current\n");
-		}
-#endif
 
 		/* 2nd plug-in TA on thermal control */
 		if ((chip->thermal_engine_control == true) && (chip->reached_temp_level == false)) {
@@ -1334,25 +1339,8 @@ static void bq24262_charging_setting(struct bq24262_chip *chip)
 			pr_info("thermal-engine control chg_current_ma=%d\n",
 				chip->chg_current_ma);
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	if (chip->chg_current_te >= 900) {
-		if (chip->chg_current_te != chip->chg_current_init_ma)
-			chip->chg_current_te = chip->chg_current_init_ma;
-
-		chip->thermal_engine_control = false;
-		pr_info("thermal_engine_control : false\n");
-		if (!chip->finished_set_aicl && !chip->reached_temp_level)
-			schedule_delayed_work(&chip->set_aicl_work,
-					round_jiffies_relative(msecs_to_jiffies(100)));
-	} else if (chip->thermal_engine_control
-			&& !chip->temp_before_finish_set_aicl){
-		chip->chg_current_ma = chip->chg_current_te;
-		pr_info("theramal set : %d\n", chip->chg_current_ma);
-	}
-#else
 			if (chip->chg_current_te == chip->chg_current_init_ma)
 				chip->thermal_engine_control = false;
-#endif
 		}
 #endif
 		for (i = ARRAY_SIZE(icl_ma_table) - 1; i >= 0; i--) {
@@ -1811,26 +1799,11 @@ static int bq24262_set_thermal_chg_current_set(const char *val, struct kernel_pa
 	}
 #endif
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	if (the_chip->finished_set_aicl || !the_chip->ac_present) {
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-		the_chip->temp_before_finish_set_aicl = true;
-		the_chip->thermal_engine_control = false;
-#else
-		the_chip->thermal_engine_control = true;
-#endif
-		pr_info("thermal_engine_control : true\n");
-	} else if (delayed_work_pending(&the_chip->set_aicl_work)) {
-		the_chip->temp_before_finish_set_aicl = true;
-		the_chip->thermal_engine_control = false;
-		pr_info("before set aici, happen thermal_engine_control\n");
-	}
-#else
 	the_chip->thermal_engine_control = true;
 
 	if (the_chip->thermal_engine_control)
 		pr_info("thermal_engine_control : true\n");
-#endif
+
 	cancel_delayed_work_sync(&the_chip->battemp_work);
 	schedule_delayed_work(&the_chip->battemp_work, HZ*1);
 #else
@@ -1879,32 +1852,10 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 	req.chg_current_te = chip->chg_current_te;
 	pr_info("thermal-engine set req.chg_current_ma = %d, req.chg_current_te = %d\n",
 			req.chg_current_ma, req.chg_current_te);
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	if (chip->finished_set_aicl && chip->temp_before_finish_set_aicl
-			&& !chip->thermal_engine_control) {
-		chip->thermal_engine_control = true;
-		chip->temp_before_finish_set_aicl = false;
-	}
-	pr_debug("[AICL] aicl finish : %d\n", chip->finished_set_aicl);
-	pr_debug("[AICL] temp aicl finish : %d\n", chip->temp_before_finish_set_aicl);
-
-	if (chip->chg_current_te >= 900 && chip->thermal_engine_control) {
-		if (chip->chg_current_te != chip->chg_current_init_ma)
-			chip->chg_current_te = chip->chg_current_init_ma;
-
-		chip->thermal_engine_control = false;
-		pr_info("thermal_engine_control : false\n");
-		if (!(chip->finished_set_aicl || chip->reached_temp_level)
-				&& chip->ac_present)
-			schedule_delayed_work(&chip->set_aicl_work,
-					round_jiffies_relative(msecs_to_jiffies(100)));
-	}
-#else
 	if (chip->chg_current_te == chip->chg_current_init_ma) {
 		chip->thermal_engine_control = false;
 		pr_info("thermal_engine_control : false\n");
 	}
-#endif
 #endif
 	if (chip->ac_online || chip->usb_online)
 		req.is_charger_changed = true;
@@ -1933,12 +1884,6 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 			chip->reached_temp_level = false;
 			chip->otp_ibat_current = res.dc_current;
 			pr_info("D->N charging current : %d\n",  chip->otp_ibat_current);
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-			if ((!chip->finished_set_aicl && !chip->thermal_engine_control)
-					&& !delayed_work_pending(&the_chip->set_aicl_work))
-				schedule_delayed_work(&chip->set_aicl_work,
-						round_jiffies_relative(msecs_to_jiffies(100)));
-#endif
 		} else if (res.change_lvl == STS_CHE_DECCUR_TO_STPCHG) {
 			chip->reached_temp_level = true;
 			wake_lock(&chip->lcs_wake_lock);
@@ -1950,12 +1895,6 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 			bq24262_enable_charging(chip, !res.disable_chg);
 			pr_info("S->N charge start : %d\n", !res.disable_chg);
 			wake_unlock(&chip->lcs_wake_lock);
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-			if ((!chip->finished_set_aicl && !chip->thermal_engine_control)
-					&& !delayed_work_pending(&the_chip->set_aicl_work))
-				schedule_delayed_work(&chip->set_aicl_work,
-						round_jiffies_relative(msecs_to_jiffies(100)));
-#endif
 		} else if (res.change_lvl == STS_CHE_STPCHG_TO_DECCUR) {
 			chip->reached_temp_level = true;
 			bq24262_enable_charging(chip, !res.disable_chg);
@@ -1966,12 +1905,6 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 				res.dc_current != DC_CURRENT_DEF) {
 			chip->reached_temp_level = false;
 			chip->otp_ibat_current = res.dc_current;
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-			if ((!chip->finished_set_aicl && !chip->thermal_engine_control)
-					&& !delayed_work_pending(&the_chip->set_aicl_work))
-				schedule_delayed_work(&chip->set_aicl_work,
-						round_jiffies_relative(msecs_to_jiffies(100)));
-#endif
 		}
 	}
 
@@ -2024,9 +1957,6 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 	bq24262_get_register(chip);
 
 	if(req.is_charger) {
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		if (chip->finished_set_aicl) {
-#endif
 		if ((res.state == CHG_BATT_NORMAL_STATE) && (req.batt_temp > 0))
 			schedule_delayed_work(&chip->battemp_work,
 					msecs_to_jiffies(MONITOR_BATTEMP_POLLING_PERIOD));
@@ -2036,11 +1966,6 @@ static void bq24262_monitor_batt_temp(struct work_struct *work)
 		else if (res.state == CHG_BATT_STPCHG_STATE || req.batt_temp <= 0)
 			schedule_delayed_work(&chip->battemp_work,
 					msecs_to_jiffies(MONITOR_BATTEMP_POLLING_PERIOD / 6));
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		} else {
-			pr_info("Not set schedule until finished set aicl\n");
-		}
-#endif
 	} else {
 		pr_info("Stop workground monitor_temp\n");
 		if (wake_lock_active(&chip->lcs_wake_lock))
@@ -2221,11 +2146,6 @@ static void bq24262_remove_set_reg(struct bq24262_chip *chip)
 			chip->cur_limit_ma, chip->chg_current_ma);
 	last_stop_charging = 0;
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	chip->finished_set_aicl = false;
-	chip->enable_set_aicl = false;
-	chip->aicl_set_chg_ma = 500;
-#endif
 	bq24262_set_input_i_limit(chip, chip->cur_limit_ma);
 	bq24262_set_ibat_max(chip, chip->chg_current_ma);
 	bq24262_enable_charging(chip, true);
@@ -2259,6 +2179,13 @@ static int bq24262_set_input_i_limit(struct bq24262_chip *chip, int ma)
 	u8 temp = 0;
 	int ret = 0;
 
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+	if(chip->usb_current_max_enabled){
+		pr_info("USB Current Max: set input limit to %d(mA)\n", USB_CURRENT_MAX);
+		ma = USB_CURRENT_MAX;
+	}
+#endif
+
 	if (ma < INPUT_CURRENT_LIMIT_100mA)
 		ma = INPUT_CURRENT_LIMIT_100mA;
 	if (ma > INPUT_CURRENT_LIMIT_2500mA)
@@ -2271,22 +2198,14 @@ static int bq24262_set_input_i_limit(struct bq24262_chip *chip, int ma)
 		}
 
 		if (icl_ma_table[i].icl_ma == ma) {
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-			if (ma == chip->aicl_set_chg_ma)
-				temp = icl_ma_table[i+1].value;
-			else
-#endif
 			temp = icl_ma_table[i].value;
-			pr_debug("mA : %d, set_reg : 0x%02x, set_current : %d\n",
-					ma, temp, icl_ma_table[i].icl_ma);
 			break;
 		} else if (icl_ma_table[i].icl_ma < ma) {
 			temp = icl_ma_table[i+1].value;
-			pr_debug("mA : %d, set_reg : 0x%02x, set_current : %d\n",
-					ma, temp, icl_ma_table[i-1].icl_ma);
 			break;
 		}
 	}
+	pr_debug("mA : %d, icl_ma_table : %d\n", ma, temp);
 	temp = temp << SET_ILIMIT_SHIFT;
 	ret = bq24262_masked_write(chip->client, R01_CONTROL_REG, IINLIM_MASK, temp);
 	if (ret) {
@@ -2448,25 +2367,18 @@ static int bq24262_set_ibat_max(struct bq24262_chip *chip, int ma)
 	int read_reg_ibat = 0;
 	int set_reg_ibat = 0;
 
+#ifdef CONFIG_LGE_PM_USB_CURRENT_MAX
+	if(chip->usb_current_max_enabled){
+		pr_info("USB Current Max: set ibat to %d(mA)\n", USB_CURRENT_MAX);
+		ma = USB_CURRENT_MAX;
+	}
+#endif
+
 	if (ma < IBAT_MIN_MA)
 		ma = IBAT_MIN_MA;
-	if (ma > lge_pm_get_ta_current())
-		ma = lge_pm_get_ta_current();
+	if (ma > IBAT_MAX_MA)
+		ma = IBAT_MAX_MA;
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	reg_val = (ma-IBAT_MIN_MA)/IBAT_STEP_MA;
-	set_ibat = reg_val * IBAT_STEP_MA + IBAT_MIN_MA;
-	reg_val = reg_val << SET_IBAT_SHIFT;
-//	chip->set_chg_current_ma = set_ibat;
-	pr_debug("Setting chg_mA = %d, set_ibat = %d, reg_val = 0x%02x\n",
-			ma, set_ibat, reg_val);
-	ret = bq24262_masked_write(chip->client, R04_BAT_TERM_FAST_CHARGE_CUR_REG,
-			ICHG_MASK, reg_val);
-	if (ret) {
-		pr_err("Failed to set ibat ret = %d\n", ret);
-		return ret;
-	}
-#else
 	ret = bq24262_read_reg(chip->client, R04_BAT_TERM_FAST_CHARGE_CUR_REG, &check_ibat);
 	if (ret) {
 		pr_err("Failed to read ibat_reg ret = %d\n", ret);
@@ -2491,7 +2403,7 @@ static int bq24262_set_ibat_max(struct bq24262_chip *chip, int ma)
 			return ret;
 		}
 	}
-#endif
+
 	ret = bq24262_read_reg(chip->client, R04_BAT_TERM_FAST_CHARGE_CUR_REG, &check_ibat);
 	if (ret) {
 		pr_err("Failed to read ibat_reg ret = %d\n", ret);
@@ -2499,7 +2411,7 @@ static int bq24262_set_ibat_max(struct bq24262_chip *chip, int ma)
 	}
 	check_ibat &= ICHG_MASK;
 	check_ibat = check_ibat >> SET_IBAT_SHIFT;
-	read_reg_ibat = check_ibat * IBAT_STEP_MA + IBAT_MIN_MA;
+	set_reg_ibat = check_ibat * IBAT_STEP_MA + IBAT_MIN_MA;
 
 	pr_debug("Finally set ibat(%d) and set ibat(%d) are same\n", ma, set_reg_ibat);
 
@@ -2529,7 +2441,7 @@ static int bq24262_set_term_current(struct bq24262_chip *chip, int ma)
 }
 
 #define VIN_LIMIT_MIN_MV	4200
-#define VIN_LIMIT_MAX_MV	4872
+#define VIN_LIMIT_MAX_MV	4788
 #define VIN_LIMIT_STEP_MV	84
 static int bq24262_set_input_vin_limit(struct bq24262_chip *chip, int mv)
 {
@@ -2986,25 +2898,6 @@ static void bq24262_irq_worker(struct work_struct *work)
 	if ((chip->ac_present ^ cable_present) || !chip->batt_present) {
 		wake_lock_timeout(&chip->uevent_wake_lock, HZ*2);
 
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		pr_debug("[AICL] Check pendding : %d\n",
-				delayed_work_pending(&chip->set_aicl_work));
-		if ((cable_present && !chip->usb_online) &&
-				!(chip->reached_temp_level || chip->thermal_engine_control)) {
-			schedule_delayed_work(&chip->set_aicl_work, round_jiffies_relative
-				(msecs_to_jiffies(100)));
-			pr_info("Start schedule aicl\n");
-			pr_debug("[AICL] Check pendding : %d\n",
-					delayed_work_pending(&chip->set_aicl_work));
-		} else {
-			pr_info("Not start schedule aicl\n");
-			pr_debug("Ready operating thermal mitigation(%s) or temp scenario(%s)\n",
-				chip->thermal_engine_control ? "Enable" : "Disable",
-				chip->reached_temp_level ? "Enable" : "Disable");
-			pr_debug("Will start After thermal mitigation and temp secnario\n");
-		}
-
-#endif
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
 		if (!cable_present &&
 				wake_lock_active(&chip->lcs_wake_lock))
@@ -3028,9 +2921,6 @@ IRQ_PASS:
 		power_supply_set_online(chip->usb_psy, cable_present);
 		power_supply_set_online(&(chip->ac_psy), cable_present);
 	} else {
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		if (chip->finished_set_aicl)
-#endif
 		schedule_delayed_work(&chip->dpm_detect_work, round_jiffies_relative
 				(msecs_to_jiffies(100)));
 #ifdef CONFIG_LGE_PM_CHARGING_SAFETY_TIMER
@@ -3062,350 +2952,16 @@ static int bq24262_get_dpm_state(struct bq24262_chip * chip)
 		return ret;
 	}
 	status &= DPM_STATUS;
-	status=status >> 6;
+	status=status >>4;
 
 	pr_debug("Reg05 0x%x val = 0x%x\n", R05_VINDPM_VOL_DPPM_STAT_REG, status);
 
-	if(status == 0x01)
+	if(status == 0x04){
 		return true;
+	}
 	else
 		return false;
 }
-
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-static int bq24262_set_increasing_chg_current(struct bq24262_chip *chip,
-		int set_current) {
-	int ret = 0;
-	int i = 0;
-	int step_counter = 0;
-	static int set_chg_current;
-
-	for (i = ARRAY_SIZE(chg_ma_table) - 1; i <= 0; i--) {
-		if (set_current == chg_ma_table[i]) {
-			step_counter = i;
-			break;
-		} else if (set_current > chg_ma_table[i]) {
-			step_counter = i + 1;
-			break;
-		}
-	}
-
-	set_chg_current = chg_ma_table[step_counter + 1];
-
-	ret = bq24262_set_ibat_max(chip, set_chg_current);
-	if (ret < 0) {
-		pr_err("Fail to set chg_current at dpm. ret = %d\n", ret);
-	}
-
-	ret = bq24262_set_input_i_limit(chip, chip->aicl_set_chg_ma);
-	if (ret < 0) {
-		pr_err("Fail to set chg_current at dpm. ret = %d\n", ret);
-	}
-
-	pr_debug("Finish set increasing current : %d\n", set_chg_current);
-
-	return set_chg_current;
-}
-#endif
-
-static int bq24262_set_decreasing_chg_current(struct bq24262_chip *chip,
-		int set_current) {
-	int ret = 0;
-	int i = 0;
-	int step_counter = 1;
-	static int set_chg_current;
-
-	for (i = ARRAY_SIZE(chg_ma_table) - 1; i <= 1; i--) {
-		if (set_current == chg_ma_table[i]) {
-			step_counter = i;
-			break;
-		} else if (set_current > chg_ma_table[i]) {
-			step_counter = i + 1;
-			break;
-		}
-	}
-
-	set_chg_current = chg_ma_table[step_counter - 1];
-
-	ret = bq24262_set_ibat_max(chip, set_chg_current);
-	if (ret < 0) {
-		pr_err("Fail to set chg_current at dpm. ret = %d\n", ret);
-	}
-
-	ret = bq24262_set_input_i_limit(chip, chip->aicl_set_chg_ma);
-	if (ret < 0) {
-		pr_err("Fail to set chg_current at dpm. ret = %d\n", ret);
-	}
-
-	pr_debug("Finish set increasing current : %d\n", set_chg_current);
-
-	return set_chg_current;
-}
-
-static void bq24262_set_chg_aicl_work(struct work_struct *work)
-{
-	struct bq24262_chip *chip =
-		container_of(work, struct bq24262_chip, set_aicl_work.work);
-
-	int ret = 0;
-	u8 status = 0;
-	bool dpm_enable = 0;
-	int get_chg_current = 0;
-	int schedule_delay = (10 * 1000);
-	int batt_temp = 0;
-	static int ready_counter;
-	static int first_check_counter;
-	static int first_check_disable_counter;
-	static int final_check;
-	static int temp_current;
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-	static int enable_counter_after_finish;
-	static int disable_counter_after_finish;
-#endif
-
-	if ((!chip->ac_present || is_factory_cable()) || chip->usb_online ) {
-		first_check_disable_counter = 0;
-		first_check_counter = 0;
-		ready_counter = 0;
-		final_check = 0;
-
-		return;
-	}
-
-	if (ready_counter == 0)
-		pr_err("AICL Start in struct\n");
-	batt_temp = bq24262_get_prop_batt_temp(chip);
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-	if (chip->finished_set_aicl &&
-			!(chip->thermal_engine_control || chip->reached_temp_level)) {
-
-		dpm_enable = bq24262_get_dpm_state(chip);
-		msleep(200);
-
-		if (dpm_enable)
-			enable_counter_after_finish++;
-		else
-			disable_counter_after_finish++;
-
-		if (enable_counter_after_finish >= 3) {
-			disable_counter_after_finish = 0;
-			temp_current = chip->aicl_set_chg_ma;
-			chip->aicl_set_chg_ma = bq24262_set_decreasing_chg_current(chip,
-					chip->aicl_set_chg_ma);
-			msleep(200);
-			dpm_enable = bq24262_get_dpm_state(chip);
-
-			if (!dpm_enable) {
-				final_check++;
-			}
-
-			if (final_check >= 3) {
-				schedule_delay = schedule_delay * 3;
-				goto FINISH_SET;
-			}
-
-			if (chip->temp_before_finish_set_aicl
-					|| batt_temp >= 450)
-				schedule_delay = schedule_delay / 5;
-			else
-				schedule_delay = schedule_delay / 2;
-
-			goto RECHECK_FOR_AICL;
-		} else if (disable_counter_after_finish >= 3) {
-			enable_counter_after_finish = 0;
-			temp_current = chip->aicl_set_chg_ma;
-			chip->aicl_set_chg_ma = bq24262_set_increasing_chg_current(chip,
-					chip->aicl_set_chg_ma);
-			msleep(200);
-			dpm_enable = bq24262_get_dpm_state(chip);
-
-			if (dpm_enable) {
-				chip->aicl_set_chg_ma = temp_current;
-				final_check++;
-			}
-
-			if (final_check >= 3) {
-				schedule_delay = schedule_delay * 3;
-				goto FINISH_SET;
-			}
-
-			if (chip->temp_before_finish_set_aicl
-					|| batt_temp >= 450)
-				schedule_delay = schedule_delay / 5;
-			else
-				schedule_delay = schedule_delay / 2;
-			goto RECHECK_FOR_AICL;
-		}
-
-	} else {
-#endif
-
-	if (ready_counter < 4)
-		ready_counter++;
-	/* When TA is connected, delay during 30 sec for stable */
-	if (ready_counter < 4) {
-		pr_debug("[AICL] Start ready counter : %d\n", ready_counter);
-		pr_debug("[AICL] Check pendding : %d\n",
-				delayed_work_pending(&chip->set_aicl_work));
-		if (chip->temp_before_finish_set_aicl)
-			schedule_delay = schedule_delay / 2;
-		goto RECHECK_FOR_AICL;
-	}
-
-	if (first_check_counter < 6 || first_check_counter < 6) {
-		ret = bq24262_read_reg(chip->client,  R04_BAT_TERM_FAST_CHARGE_CUR_REG, &status);
-		if (ret) {
-			pr_err("Failed to read ibat_reg at aicl ret = %d\n", ret);
-			schedule_delay = schedule_delay / 10;
-			goto REFLASH_AICL;
-		}
-		status &= ICHG_MASK;
-		status = status >> SET_IBAT_SHIFT;
-		get_chg_current = status * IBAT_STEP_MA + IBAT_MIN_MA;
-
-		pr_debug ("[AICL] Get current chg_ma : %d, dpm_enable : %d\n",
-				get_chg_current, dpm_enable);
-
-		pr_debug("[AICL] Set charging current : %d\n", chip->chg_current_ma);
-		ret = bq24262_set_ibat_max(chip, chip->chg_current_ma);
-		if (ret < 0) {
-			pr_err("Fail to set chg_current at dpm. ret = %d\n", ret);
-			schedule_delay = schedule_delay / 10;
-			goto REFLASH_AICL;
-		}
-
-		msleep(200);
-		dpm_enable = bq24262_get_dpm_state(chip);
-
-		if (chip->chg_current_ma == lge_pm_get_ta_current()) {
-			if (first_check_counter == 0)
-				chip->aicl_set_chg_ma = chip->chg_current_ma;
-
-			if (dpm_enable) {
-				first_check_counter++;
-				pr_debug("[AICL] Start counter check aicl : %d\n", first_check_counter);
-			} else {
-				first_check_disable_counter++;
-				pr_debug("[AICL] Start counter disable aicl : %d\n", first_check_disable_counter);
-			}
-			if (first_check_disable_counter >= 6) {
-				chip->aicl_set_chg_ma = chip->chg_current_ma;
-				goto FINISH_SET;
-			} else {
-				if (chip->temp_before_finish_set_aicl
-						|| batt_temp >= 450)
-					schedule_delay = schedule_delay / 5;
-				else
-					schedule_delay = schedule_delay / 2;
-				goto RECHECK_FOR_AICL;
-			}
-		} else {
-			/* Set reschedule 1 sec */
-			schedule_delay = schedule_delay / 10;
-			goto RECHECK_FOR_AICL;
-		}
-	}
-	if (first_check_disable_counter >= 6) {
-		chip->aicl_set_chg_ma = chip->chg_current_ma;
-		goto FINISH_SET;
-	}
-
-	/* First check chg_current for 6 times * 5 sec  */
-	if (first_check_counter >= 6) {
-		chip->enable_set_aicl = true;
-		first_check_counter = 8;
-	} else {
-		chip->enable_set_aicl = false;
-	}
-
-	if (chip->enable_set_aicl) {
-		temp_current = chip->aicl_set_chg_ma;
-		chip->aicl_set_chg_ma =
-			bq24262_set_decreasing_chg_current(chip, chip->aicl_set_chg_ma);
-
-		msleep(200);
-		dpm_enable = bq24262_get_dpm_state(chip);
-		pr_debug("[AICL] chg_current : %d, I_limit : %d, dpm : %d\n",
-				chip->aicl_set_chg_ma, bq24262_get_input_i_limit(chip), dpm_enable);
-
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-		if (chip->aicl_set_chg_ma == 1200)
-			goto FINISH_SET;
-#else
-
-		if (!dpm_enable) {
-			chip->aicl_set_chg_ma = temp_current;
-			final_check++;
-		}
-
-		if (final_check >= 3) {
-			schedule_delay = schedule_delay * 3;
-			goto FINISH_SET;
-		}
-#endif
-
-		if (chip->temp_before_finish_set_aicl
-				|| batt_temp >= 450)
-			schedule_delay = schedule_delay / 5;
-		else
-			schedule_delay = schedule_delay / 2;
-		goto RECHECK_FOR_AICL;
-	} else {
-		if (chip->temp_before_finish_set_aicl
-				|| batt_temp >= 450)
-			schedule_delay = schedule_delay / 5;
-		else
-			schedule_delay = schedule_delay / 2;
-
-		goto REFLASH_AICL;
-	}
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-	}
-#endif
-
-RECHECK_FOR_AICL:
-	schedule_delayed_work(&chip->set_aicl_work, round_jiffies_relative
-			(msecs_to_jiffies(schedule_delay)));
-
-	return;
-
-REFLASH_AICL:
-	chip->finished_set_aicl = false;
-	if (first_check_counter >= 7)
-		first_check_counter = 0;
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-	if ((chip->ac_present) && (!chip->usb_online)
-			&& !chip->finished_set_aicl) {
-#else
-	if (chip->ac_present && !chip->usb_online) {
-#endif
-		schedule_delayed_work(&chip->set_aicl_work, round_jiffies_relative
-				(msecs_to_jiffies(schedule_delay)));
-		return;
-	}
-
-FINISH_SET:
-	chip->finished_set_aicl = true;
-	first_check_disable_counter = 0;
-	first_check_counter = 0;
-	ready_counter = 0;
-	final_check = 0;
-	pr_info("[AICL] Finished\n");
-#ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
-	if(chip->batt_present)
-		schedule_delayed_work(&chip->battemp_work,
-				round_jiffies_relative(msecs_to_jiffies(100)));
-#endif
-	schedule_delayed_work(&chip->dpm_detect_work, round_jiffies_relative
-			(msecs_to_jiffies(700)));
-#ifndef CONFIG_LGE_PM_CHARGING_USING_AICL_WITH_TWO_SETTING
-	schedule_delayed_work(&chip->set_aicl_work, round_jiffies_relative
-			(msecs_to_jiffies(schedule_delay)));
-#endif
-	return;
-}
-#endif
 
 static void bq24262_dpm_detect_work(struct work_struct *work)
 {
@@ -3424,7 +2980,7 @@ static void bq24262_dpm_detect_work(struct work_struct *work)
 	static int before_get_current;
 	static bool check_dpm_flag;
 
-	if ((!chip->ac_present || is_factory_cable()) && chip->usb_online )
+	if (!(chip->ac_present || is_factory_cable()) && chip->usb_online )
 		return;
 
 	ret = bq24262_read_reg(chip->client,  R04_BAT_TERM_FAST_CHARGE_CUR_REG, &status);
@@ -3662,7 +3218,6 @@ static int bq24262_get_prop_batt_present(struct bq24262_chip *chip)
 		batt_present = 1;
 	}
 
-//	chip->batt_present = batt_present;
 	pr_debug("present=%d, chip->batt_present = %d\n",
 			batt_present ? 1 : 0, chip->batt_present);
 
@@ -4135,7 +3690,7 @@ static int bq24262_probe(struct i2c_client *client,
 			round_jiffies_relative(msecs_to_jiffies
 				(UPDATE_TIME_MS)));
 
-	cable_init_termination(chip);
+//	cable_init_termination(chip);
 
 	ret = bq24262_create_debugfs_entries(chip);
 	if (ret) {
@@ -4155,9 +3710,7 @@ static int bq24262_probe(struct i2c_client *client,
 	}
 #endif
 	INIT_DELAYED_WORK(&chip->dpm_detect_work, bq24262_dpm_detect_work);
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	INIT_DELAYED_WORK(&chip->set_aicl_work, bq24262_set_chg_aicl_work);
-#endif
+
 
 #ifdef CONFIG_LGE_PM_BQ2426X_USING_WATCHDOG
 	INIT_DELAYED_WORK(&chip->check_watchdog_work, bq24262_check_watchdog_work);
@@ -4184,9 +3737,6 @@ static int bq24262_probe(struct i2c_client *client,
 	if(chip->usb_present) {
 		power_supply_set_present(chip->usb_psy, chip->usb_present);
 		chip->ac_present = chip->usb_present;
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-		schedule_delayed_work(&chip->set_aicl_work, msecs_to_jiffies(100));
-#endif
 		schedule_delayed_work(&chip->dpm_detect_work, msecs_to_jiffies(100));
 #ifdef CONFIG_LGE_PM_BATTERY_ID_CHECKER
 		if (read_lge_battery_id()) {
@@ -4198,6 +3748,8 @@ static int bq24262_probe(struct i2c_client *client,
 		}
 #endif
 	}
+
+	cable_init_termination(chip);
 
 	bq24262_get_register(chip);
 	ret = device_create_file(&client->dev, &dev_attr_at_charge);
@@ -4241,9 +3793,6 @@ static int bq24262_probe(struct i2c_client *client,
 
 
 #ifdef CONFIG_LGE_PM_CHARGING_TEMP_SCENARIO
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	if (chip->finished_set_aicl)
-#endif
 	schedule_delayed_work(&chip->battemp_work, 5*HZ);
 #endif
 #ifdef CONFIG_LGE_PM_IRQ_NOT_WORKGROUND
@@ -4317,9 +3866,6 @@ static int bq24262_remove(struct i2c_client *client)
 #ifdef CONFIG_LGE_PM_BQ2426X_USING_WATCHDOG
 	cancel_delayed_work_sync(&chip->check_watchdog_work);
 	mutex_destroy(&chip->setting_env);
-#endif
-#ifdef CONFIG_LGE_PM_CHARGING_USING_AICL
-	cancel_delayed_work_sync(&chip->set_aicl_work);
 #endif
 #ifdef CONFIG_LGE_PM_DEBUG_CHECK_LOG
 	cancel_delayed_work_sync(&chip->charging_inform_work);

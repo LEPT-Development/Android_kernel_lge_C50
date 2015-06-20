@@ -80,6 +80,7 @@ struct msm_sensor_ctrl_t {
 	uint16_t isFirstStream;	//                                                                     
 	enum msm_camera_stream_type_t camera_stream_type;
 	uint32_t set_mclk_23880000;
+	const char* vcm_pwdn;	//                                                            
 };
 
 int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp);
@@ -119,4 +120,16 @@ long msm_sensor_subdev_fops_ioctl(struct file *file,
 	unsigned int cmd,
 	unsigned long arg);
 #endif
+
+//                                                                                
+#define SUPPORT_HI841_SENSOR 1
+
+//                                                                                      
+#define SUPPORT_ACTUATOR_POWER_DOWN 1
+
+#if (SUPPORT_ACTUATOR_POWER_DOWN == 1)
+	int msm_actuator_pwdn_mode (struct msm_sensor_ctrl_t *s_ctrl);
+#endif
+//
+
 #endif

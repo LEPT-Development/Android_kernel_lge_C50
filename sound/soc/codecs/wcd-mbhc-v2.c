@@ -929,6 +929,11 @@ static bool wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	pr_debug("%s: disable ", __func__);
 		return false;
 #endif
+	if (wcd_swch_level_remove(mbhc)) {
+		pr_debug("%s: Switch level is low\n", __func__);
+		return false;
+	}
+
 	reg1 = snd_soc_read(codec, MSM8X16_WCD_A_ANALOG_MBHC_DET_CTL_2);
 	/*
 	 * Check if there is any cross connection,
@@ -1159,6 +1164,9 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		} else {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_NONE);
 		}
+		WCD_MBHC_RSC_LOCK(mbhc);
+		wcd_mbhc_find_plug_and_report(mbhc, plug_type);
+		WCD_MBHC_RSC_UNLOCK(mbhc);
 		goto exit;
 	}
 

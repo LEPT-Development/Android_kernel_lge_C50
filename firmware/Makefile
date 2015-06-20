@@ -31,6 +31,7 @@ ifdef CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_TD4191
 synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/lions/*.img)
 synaptics_img_file += $(wildcard $(srctree)/firmware/synaptics/lions/*.bin)
 synaptics_img_file += $(wildcard $(srctree)/firmware/synaptics/lions/*.txt)
+
 synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
 fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_TD4191) += $(synaptics_firmware)
 else
@@ -68,16 +69,34 @@ endif
 endif
 endif
 
+ifdef CONFIG_MACH_MSM8939_P1BSSN_BELL_CA
+synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/p1b/*)
+synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
+fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += $(synaptics_firmware)
+endif
+
+ifdef CONFIG_MACH_MSM8939_P1BSSN_VTR_CA
+synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/p1b/*)
+synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
+fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += $(synaptics_firmware)
+endif
+
+ifdef CONFIG_MACH_MSM8939_P1BSSN_SKT_KR
+synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/p1b/*)
+synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
+fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += $(synaptics_firmware)
+endif
+
 ifdef CONFIG_MACH_MSM8939_P1BC_SPR_US
 synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/p1b/*)
 synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
 fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += $(synaptics_firmware)
 endif
 
-ifdef CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_YG
+ifdef CONFIG_TOUCHSCREEN_MSM8916_YG
 synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/yg/*)
 synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
-fw-shipped-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS_YG) += $(synaptics_firmware)
+fw-shipped-$(CONFIG_TOUCHSCREEN_MSM8916_YG) += $(synaptics_firmware)
 endif
 
 ifdef CONFIG_TOUCHSCREEN_LU202X
@@ -213,7 +232,7 @@ ifdef CONFIG_MACH_MSM8916_E7IILTE_SPR_US
 fw-shipped-$(CONFIG_SENSOR_ATMF04) += atmf04/atmf04_T7_1_00.fw
 else
 ifdef CONFIG_MACH_MSM8939_ALTEV2_VZW 
-fw-shipped-$(CONFIG_SENSOR_ATMF04) += atmf04/atmf04_ALTEV2_0_51.fw
+fw-shipped-$(CONFIG_SENSOR_ATMF04) += atmf04/atmf04_ALTEV2_0_53.fw
 else
 fw-shipped-$(CONFIG_SENSOR_ATMF04) += atmf04/atmf04_ALTEV2_0_43.fw
 endif
