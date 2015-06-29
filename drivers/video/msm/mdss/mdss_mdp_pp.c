@@ -2949,13 +2949,7 @@ int mdss_dsi_panel_invert(u32 enable)
 	}
 	else if(ctl_d && !enable)
 	{
-		igc_data->ops = MDP_PP_OPS_WRITE | MDP_PP_OPS_ENABLE;
-		for(i=0; i<256 ; i++){
-			igc_c0_c1[i]=(((igc_Table_LUT[i]*16))&0xFFF)|((((igc_Table_LUT[i]*16))&0xFFF))<<16;
-			igc_c2[i]=((igc_Table_LUT[i]*16));
-		}
-		igc_data->c0_c1_data=&igc_c0_c1[0];
-		igc_data->c2_data=&igc_c2[0];
+		igc_data->ops = MDP_PP_OPS_WRITE | MDP_PP_OPS_DISABLE;
 	}
 	else
 	{
